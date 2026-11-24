@@ -605,6 +605,11 @@ while ($true) {
             Write-Host ("  画面上：" + $scr + $(if ($st["title"] -and $scr -ne ("「" + $st["title"] + "」")) { "（标题：" + $st["title"] + "）" } else { "" })) -ForegroundColor White
             Write-Host ("  位置：" + $(if ($st["pos"]) { $st["pos"] } else { "-" }) + "  维度：" + $(if ($st["dim"]) { $st["dim"] } else { "-" }) + "  血/饱：" + $st["hp"] + "/" + $st["food"]) -ForegroundColor Gray
             Write-Host ("  在做：" + $(if ($st["mining"]) { $st["mining"] } else { "-" }) + "  登录：" + $(if ($st["auth"]) { $st["auth"] } else { "-" }) + "  回箱：" + $(if ($st["trigger"]) { $st["trigger"] } else { "-" }) + "  挖矿开关：" + $st["enabled"]) -ForegroundColor Gray
+            $pickTxt = $st["pick"]; if (-not $pickTxt) { $pickTxt = "-" }
+            $freeTxt = $st["free"]; if (-not $freeTxt) { $freeTxt = "-" }
+            $pickLow = $false
+            if ($pickTxt -match '^(\d+)') { if ([int]$Matches[1] -le 15) { $pickLow = $true } }
+            Write-Host ("  镐子耐久：" + $pickTxt + "  背包空位：" + $freeTxt) -ForegroundColor $(if ($pickLow) { "Yellow" } else { "Gray" })
             Write-Host ("  状态文件：" + $beat + "更新") -ForegroundColor DarkGray
             $l = Join-Path $d.FullName "logs\latest.log"
             if (Test-Path $l) {

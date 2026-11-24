@@ -113,6 +113,44 @@ public final class AutoMinerCommands {
                                             : "每 " + config.intervalSeconds + " 秒回箱一次。");
                                     return 1;
                                 })))
+                .then(ClientCommands.literal("recycle")
+                        .executes(ctx -> {
+                            MinerConfig cfg = AutoMiner.config();
+                            reply(ctx, "自动回收：" + (cfg.recycle.enabled ? "开" : "关")
+                                    + "；镐子低于 " + cfg.recycle.pickDurabilityPercent + "% 回箱"
+                                    + "；背包空位 ≤ " + cfg.recycle.minFreeSlots + " 回箱");
+                            return 1;
+                        })
+                        .then(ClientCommands.literal("on").executes(ctx -> {
+                            AutoMiner.config().recycle.enabled = true;
+                            AutoMiner.config().save();
+                            reply(ctx, "已开启自动回收（镐快坏了/背包快满会回箱拿备用镐）。");
+                            return 1;
+                        }))
+                        .then(ClientCommands.literal("off").executes(ctx -> {
+                            AutoMiner.config().recycle.enabled = false;
+                            AutoMiner.config().save();
+                            reply(ctx, "已关闭自动回收。");
+                            return 1;
+                        }))
+                        .then(ClientCommands.literal("pick")
+                                .then(ClientCommands.argument("百分比", IntegerArgumentType.integer(0, 90))
+                                        .executes(ctx -> {
+                                            int v = IntegerArgumentType.getInteger(ctx, "百分比");
+                                            AutoMiner.config().recycle.pickDurabilityPercent = v;
+                                            AutoMiner.config().save();
+                                            reply(ctx, v == 0 ? "已关闭按耐久回箱。" : "镐子剩 " + v + "% 就回箱换镐。");
+                                            return 1;
+                                        })))
+                        .then(ClientCommands.literal("slots")
+                                .then(ClientCommands.argument("空位", IntegerArgumentType.integer(0, 20))
+                                        .executes(ctx -> {
+                                            int v = IntegerArgumentType.getInteger(ctx, "空位");
+                                            AutoMiner.config().recycle.minFreeSlots = v;
+                                            AutoMiner.config().save();
+                                            reply(ctx, v == 0 ? "已关闭按空位回箱。" : "背包只剩 " + v + " 格就回箱。");
+                                            return 1;
+                                        }))))
                 .then(ClientCommands.literal("depositall")
                         .executes(ctx -> {
                             MinerConfig config = AutoMiner.config();

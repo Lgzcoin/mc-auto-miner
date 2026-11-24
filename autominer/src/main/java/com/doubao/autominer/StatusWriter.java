@@ -78,8 +78,11 @@ public final class StatusWriter {
             sb.append("pos=").append(p.getBlockX()).append(',').append(p.getBlockY()).append(',').append(p.getBlockZ()).append('\n');
             sb.append("hp=").append((int) Math.ceil(p.getHealth())).append('\n');
             sb.append("food=").append(p.getFoodData().getFoodLevel()).append('\n');
+            int pick = MinerController.pickPercent(p);
+            sb.append("pick=").append(pick < 0 ? "无" : pick + "%").append('\n');
+            sb.append("free=").append(MinerController.freeSlots(p)).append('\n');
         } else {
-            sb.append("dim=\npos=\nhp=\nfood=\n");
+            sb.append("dim=\npos=\nhp=\nfood=\npick=\nfree=\n");
         }
         sb.append("mining=").append(c == null ? "" : c.stateNow().label()).append('\n');
         sb.append("enabled=").append(cfg != null && cfg.enabled ? "1" : "0").append('\n');

@@ -58,6 +58,11 @@ public final class MinerController {
     private int startPointTries = 0;
     private GetJob getJob = null;
 
+    /** 这次回箱是不是为了换镐；箱子里的备用镐试拿过一次没有。 */
+    private boolean wantSparePick = false;
+    private boolean sparePickTried = false;
+    private int noPickWarnTicks = -1;
+
     /** 给状态面板用：现在在干什么。 */
     public State stateNow() {
         return state;
@@ -119,6 +124,49 @@ public final class MinerController {
             }
         }
         return total;
+    }
+
+    /** 身上最好那把镐还剩百分之几耐久；没有镐返回 -1。 */
+    public static int pickPercent(LocalPlayer player) {
+        if (player == null) {
+            return -1;
+        }
+        int best = -1;
+        Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty() || !stack.isDamageableItem()) {
+                continue;
+            }
+            String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+            if (!path.contains("pickaxe")) {
+                continue;
+            }
+            int max = stack.getMaxDamage();
+            if (max <= 0) {
+                continue;
+            }
+            int left = 100 - (int) Math.round(100.0 * stack.getDamageValue() / max);
+            if (left > best) {
+                best = left;
+            }
+        }
+        return best;
+    }
+
+    /** 背包（0-35 格）还剩几个空位。 */
+    public static int freeSlots(LocalPlayer player) {
+        if (player == null) {
+            return -1;
+        }
+        int free = 0;
+        Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < 36; slot++) {
+            if (inventory.getItem(slot).isEmpty()) {
+                free++;
+            }
+        }
+        return free;
     }
 
     public void start() {
@@ -378,12 +426,15 @@ public final class MinerController {
             }
         }
 
-        if (!shouldDeposit(player)) {
+        String reason = depositReason(player);
+        if (reason == null) {
             return;
         }
+        wantSparePick = config.recycle.enabled && reason.startsWith("镐");
+        sparePickTried = false;
 
         if (config.chests.isEmpty()) {
-            message("背包快满了，但没有配置箱子。用 /am chest add <名字> 对着箱子添加。");
+            message("要回箱了（" + reason + "），但还没配置箱子。用 /am chest add <名字> 对着箱子添加。");
             config.enabled = false;
             config.save();
             BaritoneHook.cancelAll();
@@ -408,18 +459,34 @@ public final class MinerController {
         stateTicks = 0;
         BaritoneHook.cancelAll();
         BaritoneHook.walkTo(targetChest, config.returnRange);
-        message("准备回箱存矿：" + entry.describe());
+        message("准备回箱存矿（" + reason + "）：" + entry.describe());
+    }
+
+    /** 为什么该回箱了；不该回就返回 null。 */
+    private String depositReason(LocalPlayer player) {
+        if (config.intervalSeconds > 0 && ticksSinceDeposit >= config.intervalSeconds * 20) {
+            return "定时";
+        }
+        if (config.depositTriggerItem != null && !config.depositTriggerItem.isEmpty()
+                && config.depositTriggerCount > 0
+                && countItem(player, config.depositTriggerItem) >= config.depositTriggerCount) {
+            return "攒够";
+        }
+        if (config.recycle != null && config.recycle.enabled && !config.chests.isEmpty()) {
+            int pct = pickPercent(player);
+            if (config.recycle.pickDurabilityPercent > 0 && pct >= 0 && pct <= config.recycle.pickDurabilityPercent) {
+                return "镐子耐久 " + pct + "%";
+            }
+            int free = freeSlots(player);
+            if (config.recycle.minFreeSlots > 0 && free >= 0 && free <= config.recycle.minFreeSlots) {
+                return "背包只剩 " + free + " 格";
+            }
+        }
+        return null;
     }
 
     private boolean shouldDeposit(LocalPlayer player) {
-        if (config.intervalSeconds > 0 && ticksSinceDeposit >= config.intervalSeconds * 20) {
-            return true;
-        }
-        if (config.depositTriggerItem != null && !config.depositTriggerItem.isEmpty()
-                && config.depositTriggerCount > 0) {
-            return countItem(player, config.depositTriggerItem) >= config.depositTriggerCount;
-        }
-        return false;
+        return depositReason(player) != null;
     }
 
     private boolean hasPickaxe(LocalPlayer player) {
@@ -538,6 +605,19 @@ public final class MinerController {
             return;
         }
 
+        if (wantSparePick && !sparePickTried) {
+            sparePickTried = true;
+            boolean got = takePickFromChest(mc, player, menu);
+            if (got) {
+                message("从箱子里拿了一把备用镐。");
+                emptyPasses = 0;
+            } else {
+                message("箱子里没找到备用镐" + (config.recycle.continueWithoutSpare
+                        ? "，先接着挖，记得手动换镐。" : "。"));
+            }
+            return;
+        }
+
         emptyPasses++;
         if (emptyPasses >= 2) {
             closeAndResume(player);
@@ -578,6 +658,61 @@ public final class MinerController {
         return stack.getMaxStackSize() > 1;
     }
 
+    /** 从打开的箱子里拿一把镐，拿到手后自动切到那一格。 */
+    private boolean takePickFromChest(Minecraft mc, LocalPlayer player, AbstractContainerMenu menu) {
+        MinerConfig.Recycle rc = config.recycle;
+        String wantId = rc == null ? "" : rc.pickItemId;
+        for (Slot slot : menu.slots) {
+            if (slot.container == player.getInventory()) {
+                continue;
+            }
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty() || !stack.isDamageableItem()) {
+                continue;
+            }
+            String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+            boolean match = (wantId != null && !wantId.isEmpty())
+                    ? id.equals(wantId) || path.equals(wantId)
+                    : path.contains("pickaxe");
+            if (!match) {
+                continue;
+            }
+            mc.gameMode.handleContainerInput(menu.containerId, slot.index, 0, ContainerInput.QUICK_MOVE, player);
+            selectBestPick(player);
+            return true;
+        }
+        return false;
+    }
+
+    /** 拿到新镐后，把快捷键切到耐久最好的那把。 */
+    private void selectBestPick(LocalPlayer player) {
+        Inventory inventory = player.getInventory();
+        int bestSlot = -1;
+        int bestLeft = -1;
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty() || !stack.isDamageableItem()) {
+                continue;
+            }
+            if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().contains("pickaxe")) {
+                continue;
+            }
+            int max = stack.getMaxDamage();
+            if (max <= 0) {
+                continue;
+            }
+            int left = max - stack.getDamageValue();
+            if (left > bestLeft) {
+                bestLeft = left;
+                bestSlot = slot;
+            }
+        }
+        if (bestSlot >= 0) {
+            inventory.setSelectedSlot(bestSlot);
+        }
+    }
+
     private void closeAndResume(LocalPlayer player) {
         player.closeContainer();
         state = State.COOLDOWN;
@@ -587,6 +722,20 @@ public final class MinerController {
     private void tickCooldown(Minecraft mc, LocalPlayer player) {
         if (stateTicks < 10) {
             return;
+        }
+        if (wantSparePick) {
+            int pct = pickPercent(player);
+            if (pct < 0) {
+                message("身上已经没有镐了，自动采矿暂停。");
+                wantSparePick = false;
+                if (!config.recycle.continueWithoutSpare) {
+                    stop(true);
+                    return;
+                }
+            } else if (pct <= config.recycle.pickDurabilityPercent) {
+                message("换镐没成功，现在这把只剩 " + pct + "%，继续挖但留意点。");
+            }
+            wantSparePick = false;
         }
         resumeMining();
     }

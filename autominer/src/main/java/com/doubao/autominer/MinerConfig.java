@@ -95,6 +95,24 @@ public class MinerConfig {
     /** true：除工具装备与 keepItems 外，所有东西都存进箱子。 */
     public boolean depositAll = false;
 
+    /** 自动回收：镐子快坏了 / 背包快满时回箱，顺手从箱子里拿备用镐。 */
+    public Recycle recycle = new Recycle();
+
+    public static class Recycle {
+        /** 总开关。 */
+        public boolean enabled = true;
+        /** 镐子剩余耐久低于这个百分比就回箱换镐（0 = 关）。 */
+        public int pickDurabilityPercent = 15;
+        /** 背包空位少于等于这个数就回箱（0 = 关）。 */
+        public int minFreeSlots = 1;
+        /** 从箱子里拿的工具物品 id，空 = 自动找名称里带 pickaxe 的。 */
+        public String pickItemId = "";
+        /** 一次从箱子拿几把镐（一般是 1，拿多了占背包）。 */
+        public int takeCount = 1;
+        /** 箱子里没有备用镐时，是否还在身上继续挖（true = 继续挖并提醒）。 */
+        public boolean continueWithoutSpare = true;
+    }
+
     public List<String> mineBlocks = new ArrayList<>(DEFAULT_ORES);
     public List<String> depositItems = new ArrayList<>(DEFAULT_DROPS);
     public List<String> keepItems = new ArrayList<>(DEFAULT_KEEP);
@@ -219,6 +237,14 @@ public class MinerConfig {
         if (intervalSeconds > 86400) intervalSeconds = 86400;
         if (returnRange < 1) returnRange = 1;
         if (returnRange > 6) returnRange = 6;
+        if (recycle == null) recycle = new Recycle();
+        if (recycle.pickDurabilityPercent < 0) recycle.pickDurabilityPercent = 0;
+        if (recycle.pickDurabilityPercent > 90) recycle.pickDurabilityPercent = 90;
+        if (recycle.minFreeSlots < 0) recycle.minFreeSlots = 0;
+        if (recycle.minFreeSlots > 20) recycle.minFreeSlots = 20;
+        if (recycle.takeCount < 1) recycle.takeCount = 1;
+        if (recycle.takeCount > 9) recycle.takeCount = 9;
+        if (recycle.pickItemId == null) recycle.pickItemId = "";
     }
 
     public void save() {
