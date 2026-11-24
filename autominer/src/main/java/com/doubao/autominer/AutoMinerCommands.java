@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -27,7 +28,78 @@ public final class AutoMinerCommands {
             // 两个入口各自注册一棵完整的命令树，避免 redirect 在某些客户端命令分发里出问题
             dispatcher.register(buildTree("autominer"));
             dispatcher.register(buildTree("am"));
+            dispatcher.register(buildIdxTree("idx"));
+            dispatcher.register(buildIdxTree("warehouse"));
+            dispatcher.register(buildEyeTree("eye"));
         });
+    }
+
+    private static LiteralArgumentBuilder<FabricClientCommandSource> buildIdxTree(String name) {
+        return ClientCommands.literal(name)
+                .executes(ctx -> {
+                    reply(ctx, Warehouse.summary());
+                    return 1;
+                })
+                .then(ClientCommands.literal("scan").executes(ctx -> {
+                    int n = Warehouse.scan(Minecraft.getInstance(), 5);
+                    reply(ctx, n > 0 ? ("扫到/更新 " + n + " 个容器，记进 仓库索引.txt")
+                            : "附近已加载的区块里没扫到新箱子，走两步再来。");
+                    return 1;
+                }))
+                .then(ClientCommands.literal("find")
+                        .then(ClientCommands.argument("东西", StringArgumentType.greedyString())
+                                .executes(ctx -> {
+                                    reply(ctx, Warehouse.find(StringArgumentType.getString(ctx, "东西")));
+                                    return 1;
+                                })))
+                .then(ClientCommands.literal("auto")
+                        .then(ClientCommands.literal("on").executes(ctx -> {
+                            Warehouse.setAutoScan(true);
+                            reply(ctx, "已开启：走过新箱子自动记录。");
+                            return 1;
+                        }))
+                        .then(ClientCommands.literal("off").executes(ctx -> {
+                            Warehouse.setAutoScan(false);
+                            reply(ctx, "已关闭自动记录（/idx scan 手动扫）。");
+                            return 1;
+                        })))
+                .then(ClientCommands.literal("clear").executes(ctx -> {
+                    Warehouse.clear();
+                    reply(ctx, "仓库索引已清空。");
+                    return 1;
+                }))
+                .then(ClientCommands.literal("help").executes(ctx -> {
+                    reply(ctx, "仓库索引：/idx 概况；/idx scan 扫附近 11×11 区块；/idx find 钻石 查在哪；/idx auto on|off；/idx clear");
+                    return 1;
+                }));
+    }
+
+    private static LiteralArgumentBuilder<FabricClientCommandSource> buildEyeTree(String name) {
+        return ClientCommands.literal(name)
+                .executes(ctx -> {
+                    reply(ctx, "末影之眼定位：站着扔眼睛，模组自动记方向；扔两次以上 /eye calc 算要塞坐标；/eye list 看记录；/eye clear 清空");
+                    return 1;
+                })
+                .then(ClientCommands.literal("calc").executes(ctx -> {
+                    String text = EyeLocator.calc();
+                    var src = ctx.getSource();
+                    if (!Double.isNaN(EyeLocator.LAST_X) && src.getPlayer() != null) {
+                        int dist = (int) Math.round(Math.hypot(src.getPlayer().getX() - EyeLocator.LAST_X,
+                                src.getPlayer().getZ() - EyeLocator.LAST_Z));
+                        text = text + "\n离你约 " + dist + " 格（直线）";
+                    }
+                    reply(ctx, text);
+                    return 1;
+                }))
+                .then(ClientCommands.literal("list").executes(ctx -> {
+                    reply(ctx, EyeLocator.list());
+                    return 1;
+                }))
+                .then(ClientCommands.literal("clear").executes(ctx -> {
+                    EyeLocator.clear();
+                    reply(ctx, "眼睛记录已清空。");
+                    return 1;
+                }));
     }
 
     private static LiteralArgumentBuilder<FabricClientCommandSource> buildTree(String name) {

@@ -246,7 +246,7 @@ try {
     if (-not $NoBackup) {
         $bak = Join-Path $multi ("_备份_" + (Get-Date -Format "yyyyMMdd-HHmmss"))
         New-Item -ItemType Directory -Path $bak -Force | Out-Null
-        foreach ($f in @("一键多开.ps1", "控制台.ps1", "启动多开.bat", "控制台.bat", "启动方式说明.txt")) {
+        foreach ($f in @("一键多开.ps1", "控制台.ps1", "启动多开.bat", "控制台.bat", "启动方式说明.txt", "指令生成器.html", "更新工具.ps1", "一键更新.bat")) {
             $p = Join-Path $multi $f
             if (Test-Path $p) { Copy-Item $p (Join-Path $bak $f) -Force }
         }
@@ -258,7 +258,7 @@ try {
     }
 
     # ---------- 替换脚本 ----------
-    $scriptFiles = @("一键多开.ps1", "控制台.ps1", "启动方式说明.txt", "启动多开.bat", "控制台.bat")
+    $scriptFiles = @("一键多开.ps1", "控制台.ps1", "启动方式说明.txt", "启动多开.bat", "控制台.bat", "指令生成器.html", "更新工具.ps1", "一键更新.bat")
     foreach ($f in $scriptFiles) {
         $src = Join-Path $pkgRoot $f
         if (Test-Path $src) {
@@ -298,7 +298,7 @@ try {
     # 有备份就回滚脚本
     if ($null -ne $bak -and (Test-Path $bak)) {
         Say "正在回滚到备份…" "Yellow"
-        foreach ($f in @("一键多开.ps1", "控制台.ps1", "启动方式说明.txt", "启动多开.bat", "控制台.bat")) {
+        foreach ($f in @("一键多开.ps1", "控制台.ps1", "启动方式说明.txt", "启动多开.bat", "控制台.bat", "指令生成器.html", "更新工具.ps1", "一键更新.bat")) {
             $p = Join-Path $bak $f
             if (Test-Path $p) { Copy-Item $p (Join-Path $multi $f) -Force }
         }
