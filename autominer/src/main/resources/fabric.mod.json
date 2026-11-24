@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "autominer",
+  "version": "${version}",
+  "name": "AutoMiner (Baritone)",
+  "description": "Baritone 自动采矿助手：按矿石清单自动挖矿，矿满或到点自动前往指定箱子存矿后继续下矿。",
+  "authors": ["Doubao"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.doubao.autominer.AutoMiner"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "baritone": ">=1.19.0"
+  }
+}
