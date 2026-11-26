@@ -1,4 +1,7 @@
 {
   "key.autominer.menu": "Open AutoMiner Menu",
-  "key.autominer.add_chest": "Mark Chest Under Crosshair"
+  "key.autominer.add_chest": "Mark Chest Under Crosshair",
+  "key.autominer.macro_record": "Record Macro",
+  "key.autominer.macro_play": "Replay Macro",
+  "key.autominer.macro_auto": "Auto Replay Toggle"
 }

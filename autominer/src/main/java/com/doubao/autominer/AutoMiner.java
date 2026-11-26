@@ -9,7 +9,7 @@ import java.nio.file.Files;
 
 public class AutoMiner implements ClientModInitializer {
     public static final String MOD_ID = "autominer";
-    public static final String MOD_VERSION = "1.11.0";
+    public static final String MOD_VERSION = "1.12.0";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static MinerConfig config;
@@ -52,7 +52,10 @@ public class AutoMiner implements ClientModInitializer {
             AutoAuth.tick(client);
             Onboard.tick(client);
             AutoJoin.tick(client);
-            GuiLogin.tick(client);
+            if (!MacroManager.isBusy()) {
+                GuiLogin.tick(client);
+            }
+            MacroManager.tick(client);
             StatusWriter.tick(client);
             Warehouse.tick(client);
             EyeLocator.tick(client);
@@ -67,6 +70,21 @@ public class AutoMiner implements ClientModInitializer {
             if (AutoMinerKeys.addChest != null) {
                 while (AutoMinerKeys.addChest.consumeClick()) {
                     ChestPicker.addLastTarget(true);
+                }
+            }
+            if (AutoMinerKeys.macroRecord != null) {
+                while (AutoMinerKeys.macroRecord.consumeClick()) {
+                    MacroManager.toggleRecord();
+                }
+            }
+            if (AutoMinerKeys.macroPlay != null) {
+                while (AutoMinerKeys.macroPlay.consumeClick()) {
+                    MacroManager.playCurrent();
+                }
+            }
+            if (AutoMinerKeys.macroAuto != null) {
+                while (AutoMinerKeys.macroAuto.consumeClick()) {
+                    MacroManager.toggleAuto();
                 }
             }
         });

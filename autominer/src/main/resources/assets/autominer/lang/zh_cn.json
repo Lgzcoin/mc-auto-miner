@@ -1,4 +1,7 @@
 {
   "key.autominer.menu": "打开自动采矿菜单",
-  "key.autominer.add_chest": "记录准星箱子"
+  "key.autominer.add_chest": "记录准星箱子",
+  "key.autominer.macro_record": "录制/结束宏",
+  "key.autominer.macro_play": "回放宏",
+  "key.autominer.macro_auto": "自动回放开关"
 }

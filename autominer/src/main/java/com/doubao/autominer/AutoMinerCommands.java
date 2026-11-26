@@ -132,6 +132,56 @@ public final class AutoMinerCommands {
                             reply(ctx, "配置已从 autominer.json 重新载入。");
                             return 1;
                         }))
+                .then(ClientCommands.literal("macro")
+                        .executes(ctx -> {
+                            reply(ctx, MacroManager.statusText());
+                            reply(ctx, "宏列表：" + (MacroManager.listNames().isEmpty()
+                                    ? "（空）" : String.join("、", MacroManager.listNames())));
+                            return 1;
+                        })
+                        .then(ClientCommands.literal("list")
+                                .executes(ctx -> {
+                                    reply(ctx, "宏列表：" + (MacroManager.listNames().isEmpty()
+                                            ? "（空）" : String.join("、", MacroManager.listNames())));
+                                    return 1;
+                                }))
+                        .then(ClientCommands.literal("rec")
+                                .executes(ctx -> {
+                                    MacroManager.toggleRecord();
+                                    return 1;
+                                }))
+                        .then(ClientCommands.literal("stop")
+                                .executes(ctx -> {
+                                    MacroManager.stopPlayback();
+                                    return 1;
+                                }))
+                        .then(ClientCommands.literal("play")
+                                .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                        .executes(ctx -> {
+                                            MacroManager.startPlay(StringArgumentType.getString(ctx, "name"), false);
+                                            return 1;
+                                        })))
+                        .then(ClientCommands.literal("del")
+                                .then(ClientCommands.argument("name", StringArgumentType.greedyString())
+                                        .executes(ctx -> {
+                                            String n = StringArgumentType.getString(ctx, "name");
+                                            MacroManager.delete(n);
+                                            reply(ctx, "已删除宏「" + n + "」。");
+                                            return 1;
+                                        })))
+                        .then(ClientCommands.literal("auto")
+                                .then(ClientCommands.literal("on")
+                                        .executes(ctx -> {
+                                            MacroManager.setAuto(true);
+                                            reply(ctx, "自动回放已开启。");
+                                            return 1;
+                                        }))
+                                .then(ClientCommands.literal("off")
+                                        .executes(ctx -> {
+                                            MacroManager.setAuto(false);
+                                            reply(ctx, "自动回放已关闭。");
+                                            return 1;
+                                        }))))
                 .then(ClientCommands.literal("base")
                         .executes(AutoMinerCommands::setBaseHere)
                         .then(ClientCommands.literal("off")
