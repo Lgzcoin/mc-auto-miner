@@ -39,7 +39,7 @@ function Get-PlanNames {
         $kv = $t -split "=", 2
         if ($kv.Count -lt 2) { continue }
         $k = $kv[0].Trim()
-        if ($k -match "^(密码|登录密码|password|pass|重连|重连秒数|重连间隔|retry|retrySeconds|进服指令|进服命令|onJoin|onJoinCommands)$") { continue }
+        if ($k -match "^(密码|登录密码|登录指令|进入指令|登录命令|password|pass|login|auth|authCommand|重连|重连秒数|重连间隔|retry|retrySeconds|进服指令|进服命令|onJoin|onJoinCommands)$") { continue }
         if ($k -match "^[A-Za-z0-9_]{3,16}$") { $out += $k }
     }
     return $out

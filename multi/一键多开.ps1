@@ -309,11 +309,8 @@ function New-BotConfig([string]$baseText, [string[]]$blocks, [string[]]$drops, [
     $o["enabled"] = $true
     if ($old -and $old.chests) { $o["chests"] = @($old.chests) } else { $o["chests"] = @() }
 
-    if ([string]::IsNullOrWhiteSpace($authText)) {
-        if ($old -and $old.autoAuthCommands) { $o["autoAuthCommands"] = [string]$old.autoAuthCommands } else { $o["autoAuthCommands"] = "" }
-    } else {
-        $o["autoAuthCommands"] = $authText
-    }
+    # 以 矿工配置.txt 为唯一来源：密码/登录指令清空时也要把旧认证清掉，否则改配置不生效。
+    $o["autoAuthCommands"] = if ($null -eq $authText) { "" } else { $authText }
     $o["autoAuthDelaySeconds"] = 1
 
     if ([string]::IsNullOrWhiteSpace($joinServer)) {
@@ -574,7 +571,7 @@ function Get-EarlyPlanNames {
             $kv = $t -split "=", 2
             if ($kv.Count -lt 2) { continue }
             $k = $kv[0].Trim()
-            if ($k -match "^(密码|登录密码|password|pass|重连|重连秒数|重连间隔|retry|retrySeconds|进服指令|进服命令|onJoin|onJoinCommands)$") { continue }
+            if ($k -match "^(密码|登录密码|登录指令|进入指令|登录命令|password|pass|login|auth|authCommand|重连|重连秒数|重连间隔|retry|retrySeconds|进服指令|进服命令|onJoin|onJoinCommands)$") { continue }
             $out += $k
         }
     }
@@ -780,6 +777,8 @@ if ([string]::IsNullOrWhiteSpace($PlanFile)) {
 $botPlan = @{}
 $planAuth = @{}
 $planPassword = ""
+$planLoginCommand = ""
+$loginExplicit = $false
 $planRetry = 10
 $planBase = @{}
 $planChest = @{}
@@ -798,8 +797,22 @@ if (Test-Path $PlanFile) {
         $botName = $kv[0].Trim()
         $oreText = $kv[1].Trim()
         if ($botName -match "^(进服指令|进服命令|onJoin|onJoinCommands)$") {
-            $planJoin = @($oreText -split "\|" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
-            Write-Host ("进服指令：" + ($planJoin -join " 然后 ")) -ForegroundColor Gray
+            $joinCmds = @()
+            foreach ($jc in @($oreText -split "\|" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })) {
+                if ($jc -match "^(?i)/?(login|reg|register|l)\s+\S+") {
+                    if ($loginExplicit) {
+                        Write-Host ("进服指令里的登录命令已忽略（上面已有登录密码/指令）：" + $jc) -ForegroundColor Gray
+                    } else {
+                        if ($jc -notmatch "^/") { $jc = "/" + $jc }
+                        $planLoginCommand = $jc
+                        Write-Host ("识别到登录指令：" + $jc) -ForegroundColor Gray
+                    }
+                } else {
+                    $joinCmds += $jc
+                }
+            }
+            $planJoin = @($joinCmds)
+            if ($planJoin.Count -gt 0) { Write-Host ("进服指令：" + ($planJoin -join " 然后 ")) -ForegroundColor Gray }
             continue
         }
         $authPart = ""
@@ -814,7 +827,16 @@ if (Test-Path $PlanFile) {
                 elseif ($token -match "^(箱|箱子|存矿|chest)=(.+)$") { $chestTxt = $Matches[2] }
                 elseif ($token -ne "") { $cmds += $token }
             }
-            if ($cmds.Count -gt 0) { $authPart = ($cmds -join "|") }
+            if ($cmds.Count -gt 0) {
+                $norm = @()
+                foreach ($c in $cmds) {
+                    if ($c -match "^(?i)/?(login|reg|register|l)\s+\S+") {
+                        if ($c -notmatch "^/") { $c = "/" + $c }
+                    }
+                    $norm += $c
+                }
+                $authPart = ($norm -join "|")
+            }
         }
         if ($botName -match "^(重连|重连秒数|重连间隔|retry|retrySeconds)$") {
             $rv = 0
@@ -828,8 +850,22 @@ if (Test-Path $PlanFile) {
             }
             continue
         }
+        if ($botName -match "^(登录指令|进入指令|登录命令|login|auth|authCommand)$") {
+            $planLoginCommand = $oreText
+            $loginExplicit = $true
+            Write-Host ("登录指令：" + $planLoginCommand) -ForegroundColor Gray
+            continue
+        }
         if ($botName -match "^(密码|登录密码|password|pass)$") {
-            $planPassword = $oreText
+            if ($oreText -match "^/") {
+                $planLoginCommand = $oreText
+                $planPassword = ""
+                Write-Host ("识别到登录指令：" + $planLoginCommand) -ForegroundColor Gray
+            } else {
+                $planPassword = $oreText
+                $planLoginCommand = ""
+            }
+            $loginExplicit = $true
             $botPlan["__password__"] = @($oreText)
             continue
         }
@@ -879,9 +915,14 @@ if ($botPlan.Count -gt 0) {
 }
 if ($names.Count -eq 0) { $names = @("Miner1", "Miner2") }
 
-if ([string]::IsNullOrWhiteSpace($Auth) -and -not [string]::IsNullOrWhiteSpace($planPassword)) {
-    $Auth = "/login " + $planPassword
-    Write-Host ("按 矿工配置.txt 里的密码自动登录：/login " + $planPassword) -ForegroundColor Cyan
+if ([string]::IsNullOrWhiteSpace($Auth)) {
+    if (-not [string]::IsNullOrWhiteSpace($planLoginCommand)) {
+        $Auth = $planLoginCommand.Trim()
+        Write-Host ("按 矿工配置.txt 里的登录指令自动登录：" + $Auth) -ForegroundColor Cyan
+    } elseif (-not [string]::IsNullOrWhiteSpace($planPassword)) {
+        $Auth = "/login " + $planPassword
+        Write-Host ("按 矿工配置.txt 里的密码自动登录：/login " + $planPassword) -ForegroundColor Cyan
+    }
 }
 
 # 服务器只认 3-16 位 ASCII 名字（字母/数字/下划线），中文名会被踢或进不去
@@ -1010,13 +1051,17 @@ function Show-Header([hashtable]$running) {
     Write-Host ("  " + ("═" * 77)) -ForegroundColor DarkCyan
     $srvText = if ($Server) { $Server } else { "只开游戏，不进服务器" }
     Write-Host ("   自动采矿助手    " + $srvText + "    共 " + $names.Count + " 个号    掉线 " + $planRetry + " 秒重连") -ForegroundColor Cyan
+    $pwState = if ($planLoginCommand) { "自定义登录指令" }
+        elseif ($planPassword) { "已设置（" + $planPassword.Length + " 位）" }
+        elseif ($Auth -like "/login *") { "命令行指定" } else { "未设置" }
+    Write-Host ("   进入密码：" + $pwState) -ForegroundColor DarkGray
     Write-Host ("  " + ("═" * 77)) -ForegroundColor DarkCyan
     if ($script:lastNote) {
         Write-Host ("   ✔ " + $script:lastNote) -ForegroundColor Green
     }
     Show-BotPlan $running
     Write-Host "   输序号 = 改这个号（名字、挖什么）     a = 全部重设     回车 = 现在开始" -ForegroundColor Gray
-    Write-Host "   n=加号   d=删号   b=设基地和存矿箱   i=进服指令   r=改重连秒数   ?=详细说明" -ForegroundColor Gray
+    Write-Host "   n=加号   d=删号   b=设基地和存矿箱   i=进服指令   p=改进入密码   r=改重连秒数   ?=详细说明" -ForegroundColor Gray
 }
 
 function Ask-BotName([string]$oldName) {
@@ -1056,14 +1101,15 @@ function Rename-BotDir([string]$oldName, [string]$newName) {
     }
 }
 
-function Save-PlanFile([hashtable]$plan, [string]$password, [string]$planPath, [int]$retry = 10) {
+function Save-PlanFile([hashtable]$plan, [string]$password, [string]$planPath, [int]$retry = 10, [string]$loginCommand = "") {
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine("# 自动采矿助手 · 矿工分工")
     [void]$sb.AppendLine("# 格式：名字 = 矿种1, 矿种2   （可写中文：钻石、绿宝石、煤、铁、红石、青金石…）")
     [void]$sb.AppendLine("# 只写名字不写矿种 = 这个号沿用游戏里已有的配置")
     [void]$sb.AppendLine("# 这个文件每次在启动界面改完都会自动重写，平时不用手改")
     [void]$sb.AppendLine("")
-    if ($password) { [void]$sb.AppendLine("密码 = " + $password) }
+    if ($loginCommand) { [void]$sb.AppendLine("登录指令 = " + $loginCommand) }
+    elseif ($password) { [void]$sb.AppendLine("密码 = " + $password) }
     [void]$sb.AppendLine("重连秒数 = " + $retry)
     if ($planJoin.Count -gt 0) { [void]$sb.AppendLine("进服指令 = " + ($planJoin -join " | ")) }
     [void]$sb.AppendLine("")
@@ -1125,6 +1171,7 @@ if (-not $NoSetup -and -not [Environment]::GetEnvironmentVariable("AM_NO_SETUP")
             Write-Host "   b        设基地/矿点坐标 + 存矿箱坐标（进服先去这里，再开挖）" -ForegroundColor Gray
             Write-Host "   i        设进服后自动发的指令，比如 /home base、/kit（多条用 |）" -ForegroundColor Gray
             Write-Host "   a        所有号挨个重设挖什么" -ForegroundColor Gray
+            Write-Host "   p        改进入密码（进服自动发 /login；0 = 清空）" -ForegroundColor Gray
             Write-Host "   r        改掉线重连间隔（3-600 秒，默认 10）" -ForegroundColor Gray
             Write-Host "   名字规则  3-16 位英文/数字/下划线（服务器不收中文名）" -ForegroundColor DarkGray
             Write-Host "   填坐标    格式 x y z，空格或逗号都行，例如 100 64 -200" -ForegroundColor DarkGray
@@ -1147,6 +1194,50 @@ if (-not $NoSetup -and -not [Environment]::GetEnvironmentVariable("AM_NO_SETUP")
                     $script:lastNote = "重连间隔改成 " + $planRetry + " 秒"
                 } else {
                     Write-Host "    只认数字，没改" -ForegroundColor Yellow
+                }
+            }
+            $menuDrawn = $true
+            continue
+        }
+        if ($sel -ieq "p") {
+            $pwText = if ($planLoginCommand) { "自定义登录指令" }
+                elseif ($planPassword) { "已设置（" + $planPassword.Length + " 位）" } else { "未设置" }
+            Write-Host ("  现在是：" + $pwText) -ForegroundColor DarkGray
+            Write-Host "  直接输密码 = 自动变成 /login 密码；也可以输完整指令，例如 /login 你的密码、/l 你的密码" -ForegroundColor DarkGray
+            try { $inp = Read-Host "  新的进入密码或登录指令（回车=不改，输入 0 = 清空）" } catch { $inp = "" }
+            if ($null -ne $inp -and $inp.Trim() -ne "") {
+                $newLogin = $inp.Trim()
+                if ($newLogin -eq "0") {
+                    $planPassword = ""
+                    $planLoginCommand = ""
+                    if ($Auth -like "/login *" -or $Auth -like "/l *" -or $Auth -like "/reg *" -or $Auth -like "/register *") { $Auth = "" }
+                    $planChanged = $true
+                    $script:lastNote = "进入密码已清空"
+                    Write-Host "    已清空，进服不再自动登录" -ForegroundColor Green
+                } elseif ($newLogin.Contains("|") -or $newLogin.Contains("`r") -or $newLogin.Contains("`n") -or $newLogin.Length -gt 120) {
+                    Write-Host "    不能包含 | 或换行，最长 120 位，没改" -ForegroundColor Yellow
+                } elseif ($newLogin -match "^(?i)/?(login|reg|register|l)\s+\S+") {
+                    if ($newLogin -notmatch "^/") { $newLogin = "/" + $newLogin }
+                    $planLoginCommand = $newLogin
+                    $planPassword = ""
+                    $Auth = $newLogin
+                    $planChanged = $true
+                    $script:lastNote = "登录指令已改成自定义"
+                    Write-Host ("    已更新；进服会自动发：" + $Auth) -ForegroundColor Green
+                } elseif ($newLogin.StartsWith("/")) {
+                    $planLoginCommand = $newLogin
+                    $planPassword = ""
+                    $Auth = $newLogin
+                    $planChanged = $true
+                    $script:lastNote = "登录指令已改成自定义"
+                    Write-Host ("    已更新；进服会自动发：" + $Auth) -ForegroundColor Green
+                } else {
+                    $planPassword = $newLogin
+                    $planLoginCommand = ""
+                    $Auth = "/login " + $planPassword
+                    $planChanged = $true
+                    $script:lastNote = "进入密码已改成自定义密码"
+                    Write-Host "    已更新；启动时会自动发 /login" -ForegroundColor Green
                 }
             }
             $menuDrawn = $true
@@ -1353,14 +1444,14 @@ if (-not $NoSetup -and -not [Environment]::GetEnvironmentVariable("AM_NO_SETUP")
         Write-Host "    看不懂：数字=改号  n=新增  d=删除  b=设点  i=进服指令  a=全重设  r=重连  ?=说明  回车=启动" -ForegroundColor Yellow
     }
     if ($planChanged) {
-        Save-PlanFile $planByBot $planPassword $PlanFile $planRetry
+        Save-PlanFile $planByBot $planPassword $PlanFile $planRetry $planLoginCommand
         Write-Host ("已把分工写回 " + $PlanFile) -ForegroundColor Cyan
     }
 }
 
 if ($renamedPlan) {
     try {
-        Save-PlanFile $planByBot $planPassword $PlanFile $planRetry
+        Save-PlanFile $planByBot $planPassword $PlanFile $planRetry $planLoginCommand
         Write-Host ("[名字修正] 计划文件里的中文名已换成服务器能用的名字，写回 " + $PlanFile) -ForegroundColor Yellow
     } catch { }
 }
@@ -1483,7 +1574,32 @@ foreach ($name in $names) {
             Write-Host ("  配置已是最新：{0}（挖 {1}）" -f $name, ($keys -join ", ")) -ForegroundColor Gray
         }
     } elseif (($planByBot.ContainsKey($name)) -and (Test-Path $botCfgPath)) {
-        Write-Host ("  保留已有配置：{0}（这个号没写矿种）" -f $name) -ForegroundColor Gray
+        # 没写矿种时保留挖矿配置，但登录/进服指令仍以 矿工配置.txt 为准。
+        $authForBot = $Auth
+        if ($planAuth.ContainsKey($name)) { $authForBot = $planAuth[$name] }
+        try {
+            $oj = [System.IO.File]::ReadAllText($botCfgPath) | ConvertFrom-Json
+            $chg = $false
+            $oldAuth = if ($oj.PSObject.Properties.Name -contains "autoAuthCommands") { [string]$oj.autoAuthCommands } else { "" }
+            if ($oldAuth -ne $authForBot) {
+                $oj | Add-Member -Force -NotePropertyName autoAuthCommands -NotePropertyValue $authForBot
+                $chg = $true
+            }
+            $oldJoin = if ($oj.PSObject.Properties.Name -contains "onJoinCommands") { @($oj.onJoinCommands) -join "|" } else { "" }
+            $newJoin = @($planJoin) -join "|"
+            if ($oldJoin -ne $newJoin) {
+                $oj | Add-Member -Force -NotePropertyName onJoinCommands -NotePropertyValue @($planJoin)
+                $chg = $true
+            }
+            if ($chg) {
+                [System.IO.File]::WriteAllText($botCfgPath, ($oj | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
+                Write-Host ("  已按 矿工配置.txt 更新 {0} 的登录/进服指令（矿种保持原样）" -f $name) -ForegroundColor Green
+            } else {
+                Write-Host ("  保留已有配置：{0}（这个号没写矿种）" -f $name) -ForegroundColor Gray
+            }
+        } catch {
+            Write-Host ("  更新登录指令失败：" + $_.Exception.Message) -ForegroundColor Yellow
+        }
     } elseif ((-not (Test-Path $botCfgPath)) -and (Test-Path $configSrc)) {
         Copy-Item $configSrc $botCfgPath -Force
         try {
