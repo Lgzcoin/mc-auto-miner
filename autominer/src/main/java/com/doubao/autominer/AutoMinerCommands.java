@@ -204,90 +204,147 @@ public final class AutoMinerCommands {
                                                             + "：进服后先走过去，到了再开挖。");
                                                     return 1;
                                                 })))))
-                .then(ClientCommands.literal("predeposit")
+                .then(ClientCommands.literal("hook")
                         .executes(ctx -> {
-                            reply(ctx, preDepositStatus());
+                            reply(ctx, hookList());
                             return 1;
                         })
-                        .then(ClientCommands.literal("on").executes(ctx -> {
-                            AutoMiner.config().preDepositEnabled = true;
-                            AutoMiner.config().save();
-                            reply(ctx, "已开启回箱前执行指令/脚本。");
-                            return 1;
-                        }))
-                        .then(ClientCommands.literal("off").executes(ctx -> {
-                            AutoMiner.config().preDepositEnabled = false;
-                            AutoMiner.config().save();
-                            reply(ctx, "已关闭回箱前执行，达到条件直接回箱。");
-                            return 1;
-                        }))
                         .then(ClientCommands.literal("list").executes(ctx -> {
-                            reply(ctx, preDepositStatus());
+                            reply(ctx, hookList());
                             return 1;
                         }))
-                        .then(ClientCommands.literal("add")
-                                .then(ClientCommands.argument("指令", StringArgumentType.greedyString())
-                                        .executes(ctx -> {
-                                            String cmd = StringArgumentType.getString(ctx, "指令").trim();
-                                            if (cmd.startsWith("/")) {
-                                                cmd = cmd.substring(1);
-                                            }
-                                            if (cmd.isEmpty()) {
-                                                reply(ctx, "指令不能为空。");
-                                                return 1;
-                                            }
-                                            AutoMiner.config().preDepositCommands.add(cmd);
-                                            AutoMiner.config().save();
-                                            reply(ctx, "已添加回箱前指令（第 "
-                                                    + AutoMiner.config().preDepositCommands.size() + " 条）：" + cmd);
-                                            return 1;
-                                        })))
-                        .then(ClientCommands.literal("del")
-                                .then(ClientCommands.argument("序号", IntegerArgumentType.integer(1, 999))
-                                        .executes(ctx -> {
-                                            int index = IntegerArgumentType.getInteger(ctx, "序号") - 1;
-                                            if (index < 0 || index >= AutoMiner.config().preDepositCommands.size()) {
-                                                reply(ctx, "没有这个序号，先用 /am predeposit list 看。");
-                                                return 1;
-                                            }
-                                            String removed = AutoMiner.config().preDepositCommands.remove(index);
-                                            AutoMiner.config().save();
-                                            reply(ctx, "已删除回箱前指令：" + removed);
-                                            return 1;
-                                        })))
-                        .then(ClientCommands.literal("clear").executes(ctx -> {
-                            AutoMiner.config().preDepositCommands.clear();
-                            AutoMiner.config().save();
-                            reply(ctx, "已清空回箱前指令（脚本文件仍会读）。");
-                            return 1;
-                        }))
-                        .then(ClientCommands.literal("script")
-                                .then(ClientCommands.argument("文件名", StringArgumentType.word())
-                                        .executes(ctx -> {
-                                            AutoMiner.config().preDepositScript = StringArgumentType.getString(ctx, "文件名");
-                                            AutoMiner.config().save();
-                                            reply(ctx, "回箱前脚本文件：" + AutoMiner.config().preDepositScript
-                                                    + "（放 config 目录，一行一条，空 = 不读）");
-                                            return 1;
-                                        })))
-                        .then(ClientCommands.literal("delay")
-                                .then(ClientCommands.argument("tick", IntegerArgumentType.integer(0, 200))
-                                        .executes(ctx -> {
-                                            AutoMiner.config().preDepositCommandDelayTicks =
-                                                    IntegerArgumentType.getInteger(ctx, "tick");
-                                            AutoMiner.config().save();
-                                            reply(ctx, "每条回箱前指令间隔 " + AutoMiner.config().preDepositCommandDelayTicks + " tick。");
-                                            return 1;
-                                        })))
-                        .then(ClientCommands.literal("settle")
-                                .then(ClientCommands.argument("tick", IntegerArgumentType.integer(0, 600))
-                                        .executes(ctx -> {
-                                            AutoMiner.config().preDepositSettleTicks =
-                                                    IntegerArgumentType.getInteger(ctx, "tick");
-                                            AutoMiner.config().save();
-                                            reply(ctx, "最后一条指令后等 " + AutoMiner.config().preDepositSettleTicks + " tick 再回箱。");
-                                            return 1;
-                                        }))))
+                        .then(ClientCommands.argument("事件", StringArgumentType.word())
+                                .executes(ctx -> {
+                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                    if (event == null) {
+                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                        return 1;
+                                    }
+                                    reply(ctx, hookStatus(event));
+                                    return 1;
+                                })
+                                .then(ClientCommands.literal("on").executes(ctx -> {
+                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                    if (event == null) {
+                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                        return 1;
+                                    }
+                                    AutoMiner.config().hookOrCreate(event).enabled = true;
+                                    AutoMiner.config().save();
+                                    reply(ctx, "已开启[" + event.label + "]事件脚本。");
+                                    return 1;
+                                }))
+                                .then(ClientCommands.literal("off").executes(ctx -> {
+                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                    if (event == null) {
+                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                        return 1;
+                                    }
+                                    AutoMiner.config().hookOrCreate(event).enabled = false;
+                                    AutoMiner.config().save();
+                                    reply(ctx, "已关闭[" + event.label + "]事件脚本。");
+                                    return 1;
+                                }))
+                                .then(ClientCommands.literal("add")
+                                        .then(ClientCommands.argument("指令", StringArgumentType.greedyString())
+                                                .executes(ctx -> {
+                                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                                    if (event == null) {
+                                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                        return 1;
+                                                    }
+                                                    String cmd = StringArgumentType.getString(ctx, "指令").trim();
+                                                    if (cmd.startsWith("/")) {
+                                                        cmd = cmd.substring(1);
+                                                    }
+                                                    if (cmd.isEmpty()) {
+                                                        reply(ctx, "指令不能为空。");
+                                                        return 1;
+                                                    }
+                                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                                    hook.commands.add(cmd);
+                                                    AutoMiner.config().save();
+                                                    reply(ctx, "已给[" + event.label + "]添加第 " + hook.commands.size() + " 条：" + cmd);
+                                                    return 1;
+                                                })))
+                                .then(ClientCommands.literal("del")
+                                        .then(ClientCommands.argument("序号", IntegerArgumentType.integer(1, 999))
+                                                .executes(ctx -> {
+                                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                                    if (event == null) {
+                                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                        return 1;
+                                                    }
+                                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                                    int index = IntegerArgumentType.getInteger(ctx, "序号") - 1;
+                                                    if (index < 0 || index >= hook.commands.size()) {
+                                                        reply(ctx, "没有这个序号，先用 /am hook " + event.key + " 看。");
+                                                        return 1;
+                                                    }
+                                                    String removed = hook.commands.remove(index);
+                                                    AutoMiner.config().save();
+                                                    reply(ctx, "已删除[" + event.label + "]指令：" + removed);
+                                                    return 1;
+                                                })))
+                                .then(ClientCommands.literal("clear").executes(ctx -> {
+                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                    if (event == null) {
+                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                        return 1;
+                                    }
+                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                    hook.commands.clear();
+                                    AutoMiner.config().save();
+                                    reply(ctx, "已清空[" + event.label + "]的指令（脚本文件仍会读）。");
+                                    return 1;
+                                }))
+                                .then(ClientCommands.literal("script")
+                                        .then(ClientCommands.argument("文件名", StringArgumentType.word())
+                                                .executes(ctx -> {
+                                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                                    if (event == null) {
+                                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                        return 1;
+                                                    }
+                                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                                    hook.script = StringArgumentType.getString(ctx, "文件名");
+                                                    AutoMiner.config().save();
+                                                    reply(ctx, "[" + event.label + "]脚本文件：" + hook.script
+                                                            + "（放 config 目录，一行一条，空 = 不读）");
+                                                    return 1;
+                                                })))
+                                .then(ClientCommands.literal("delay")
+                                        .then(ClientCommands.argument("tick", IntegerArgumentType.integer(0, 200))
+                                                .executes(ctx -> {
+                                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                                    if (event == null) {
+                                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                        return 1;
+                                                    }
+                                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                                    hook.commandDelayTicks = IntegerArgumentType.getInteger(ctx, "tick");
+                                                    AutoMiner.config().save();
+                                                    reply(ctx, "[" + event.label + "]指令间隔 " + hook.commandDelayTicks + " tick。");
+                                                    return 1;
+                                                })))
+                                .then(ClientCommands.literal("settle")
+                                        .then(ClientCommands.argument("tick", IntegerArgumentType.integer(0, 600))
+                                                .executes(ctx -> {
+                                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                                    if (event == null) {
+                                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                        return 1;
+                                                    }
+                                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                                    hook.settleTicks = IntegerArgumentType.getInteger(ctx, "tick");
+                                                    AutoMiner.config().save();
+                                                    reply(ctx, "[" + event.label + "]执行完等 " + hook.settleTicks + " tick。");
+                                                    return 1;
+                                                })))))
+                .then(ClientCommands.literal("predeposit").executes(ctx -> {
+                    reply(ctx, hookStatus(HookEvent.PRE_DEPOSIT));
+                    return 1;
+                }))
                 .then(ClientCommands.literal("trigger")
                         .then(ClientCommands.literal("off")
                                 .executes(ctx -> {
@@ -455,20 +512,59 @@ public final class AutoMinerCommands {
         return 1;
     }
 
-    private static String preDepositStatus() {
-        MinerConfig c = AutoMiner.config();
-        StringBuilder sb = new StringBuilder("回箱前执行：").append(c.preDepositEnabled ? "开" : "关");
-        sb.append("；脚本：").append(c.preDepositScript == null || c.preDepositScript.isBlank()
-                ? "不读" : c.preDepositScript);
-        sb.append("；间隔 ").append(c.preDepositCommandDelayTicks).append(" tick")
-                .append("；执行完等 ").append(c.preDepositSettleTicks).append(" tick");
-        if (c.preDepositCommands.isEmpty()) {
-            sb.append("\n指令：空（可用 /am predeposit add /home 添加）");
+    private static String hookList() {
+        StringBuilder sb = new StringBuilder("事件脚本（每个事件独立开关；/am hook <事件> 看详情）：");
+        for (HookEvent event : HookEvent.values()) {
+            MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+            sb.append('\n').append(hook.enabled ? "§a开" : "§7关").append("  ")
+                    .append(event.label).append("  §7").append(event.key)
+                    .append("  §8").append(hook.commands.size()).append(" 条")
+                    .append(hook.script == null || hook.script.isBlank() ? "" : " + " + hook.script);
+        }
+        return sb.toString();
+    }
+
+    private static String hookStatus(HookEvent event) {
+        MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+        StringBuilder sb = new StringBuilder(event.label + "（" + event.key + "）：")
+                .append(hook.enabled ? "开" : "关");
+        sb.append("\n").append(event.description);
+        sb.append("\n脚本：").append(hook.script == null || hook.script.isBlank() ? "不读" : hook.script);
+        sb.append("；间隔 ").append(hook.commandDelayTicks).append(" tick")
+                .append("；执行完等 ").append(hook.settleTicks).append(" tick");
+        if (hook.commands.isEmpty()) {
+            sb.append("\n指令：空（/am hook ").append(event.key).append(" add /home）");
         } else {
             sb.append("\n指令：");
-            for (int i = 0; i < c.preDepositCommands.size(); i++) {
-                sb.append('\n').append(i + 1).append(". ").append(c.preDepositCommands.get(i));
+            for (int i = 0; i < hook.commands.size(); i++) {
+                sb.append('\n').append(i + 1).append(". ").append(hook.commands.get(i));
             }
+        }
+        return sb.toString();
+    }
+
+    private static HookEvent findHookEvent(String raw) {
+        HookEvent event = HookEvent.byKey(raw);
+        if (event != null) {
+            return event;
+        }
+        if (raw != null) {
+            for (HookEvent candidate : HookEvent.values()) {
+                if (candidate.label.equals(raw)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String hookKeys() {
+        StringBuilder sb = new StringBuilder();
+        for (HookEvent event : HookEvent.values()) {
+            if (!sb.isEmpty()) {
+                sb.append('、');
+            }
+            sb.append(event.key).append("(").append(event.label).append(")");
         }
         return sb.toString();
     }
@@ -484,10 +580,13 @@ public final class AutoMinerCommands {
         builder.append("\n回箱条件：").append(controller.depositTriggerLabel());
         builder.append("\n定时回箱：").append(config.intervalSeconds == 0 ? "关闭" : config.intervalSeconds + " 秒");
         builder.append("\n全部入库：").append(config.depositAll ? "开" : "关");
-        builder.append("\n回箱前指令：").append(config.preDepositEnabled ? "开" : "关")
-                .append("（").append(config.preDepositCommands.size()).append(" 条 + 脚本 ")
-                .append(config.preDepositScript == null || config.preDepositScript.isBlank() ? "不读" : config.preDepositScript)
-                .append("）");
+        builder.append("\n事件脚本：");
+        for (HookEvent event : HookEvent.values()) {
+            MinerConfig.Hook hook = config.hookOrCreate(event);
+            builder.append('\n').append(hook.enabled ? "开 " : "关 ").append(event.label)
+                    .append("：").append(hook.commands.size()).append(" 条")
+                    .append(hook.script == null || hook.script.isBlank() ? "" : " + " + hook.script);
+        }
         reply(ctx, builder.toString());
         return 1;
     }

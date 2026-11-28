@@ -33,7 +33,7 @@ public final class MinerController {
         IDLE("空闲"),
         GOTO("前往基地"),
         MINING("挖矿中"),
-        PREDEPOSIT("回箱前执行指令"),
+        SCRIPT("执行事件脚本"),
         WALKING("前往箱子"),
         OPENING("开箱子"),
         DEPOSITING("存放矿物"),
@@ -66,10 +66,18 @@ public final class MinerController {
     private int startPointTries = 0;
     private GetJob getJob = null;
     private String pendingDepositReason = "";
-    private final List<String> preDepositQueue = new ArrayList<>();
-    private int preDepositIndex = 0;
-    private int preDepositCooldown = 0;
-    private int preDepositDoneTicks = 0;
+    private final List<String> scriptQueue = new ArrayList<>();
+    private int scriptIndex = 0;
+    private int scriptCooldown = 0;
+    private int scriptDoneTicks = 0;
+    private int scriptBudget = 0;
+    private int scriptSettleTicks = 20;
+    private int scriptCommandDelayTicks = 10;
+    private Runnable scriptAfter = null;
+    private String scriptLabel = "";
+    private boolean startHookDone = false;
+    private boolean postDepositDone = true;
+    private boolean stopHookRunning = false;
 
     /** 这次回箱是不是为了换镐；箱子里的备用镐试拿过一次没有。 */
     private boolean wantSparePick = false;
@@ -190,6 +198,10 @@ public final class MinerController {
         ticksSinceDeposit = 0;
         mineIdleTicks = 0;
         mineRestarts = 0;
+        startHookDone = false;
+        postDepositDone = true;
+        stopHookRunning = false;
+        clearScript();
         if (!BaritoneHook.available()) {
             switch (BaritoneHook.status()) {
                 case NO_MOD -> message("没找到男中音的模组。mods 里要放 baritone-api-fabric-1.19.0.jar"
@@ -223,7 +235,7 @@ public final class MinerController {
             message("男中音不可用（" + BaritoneHook.status().label + "），输入 /am diag 查原因。");
             return;
         }
-        stop(true);
+        finishStop(true);
         if (mc.player.getRecipeBook() == null) {
             message("读不到配方书，没法计算合成路线。");
             return;
@@ -271,12 +283,25 @@ public final class MinerController {
     }
 
     public void stop(boolean silent) {
+        if (!stopHookRunning && config.enabled && state != State.SCRIPT) {
+            stopHookRunning = true;
+            if (runHook(HookEvent.STOP, () -> finishStop(silent))) {
+                return;
+            }
+            stopHookRunning = false;
+        }
+        finishStop(silent);
+    }
+
+    private void finishStop(boolean silent) {
+        stopHookRunning = false;
         if (config.enabled) {
             config.enabled = false;
             config.save();
         }
         BaritoneHook.cancelAll();
         getJob = null;
+        clearScript();
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null && isContainerOpen(mc.player)) {
             mc.player.closeContainer();
@@ -286,11 +311,9 @@ public final class MinerController {
         targetChest = null;
         mineIdleTicks = 0;
         mineRestarts = 0;
-        preDepositQueue.clear();
-        preDepositIndex = 0;
-        preDepositCooldown = 0;
-        preDepositDoneTicks = 0;
         pendingDepositReason = "";
+        postDepositDone = true;
+        startHookDone = false;
         if (!silent) {
             message("已停止自动采矿。");
         }
@@ -315,8 +338,8 @@ public final class MinerController {
                 getJob = null;
             } else {
                 getJob.tick(mc, player);
+                return;
             }
-            return;
         }
 
         if (!config.enabled) {
@@ -344,7 +367,7 @@ public final class MinerController {
             case IDLE -> enterMining(mc, player);
             case GOTO -> tickGoto(mc, player);
             case MINING -> tickMining(mc, player, level);
-            case PREDEPOSIT -> tickPreDeposit(mc, player, level);
+            case SCRIPT -> tickScript(mc, player);
             case WALKING -> tickWalking(mc, player, level);
             case OPENING -> tickOpening(mc, player, level);
             case DEPOSITING -> tickDepositing(mc, player, level);
@@ -364,12 +387,25 @@ public final class MinerController {
                 message("先去基地/矿区（" + fmtPos(startPointPos()) + "），到了再开挖。");
             } else {
                 message("寻路到开荒点失败（男中音没就绪），先原地开挖。");
-                state = State.MINING;
-                stateTicks = 0;
-                BaritoneHook.startMine(config.mineBlocks);
+                beginMining(mc);
             }
             return;
         }
+        beginMining(mc);
+    }
+
+    /** 真正开挖；第一次进入时先执行“开始挖矿”事件脚本。 */
+    private void beginMining(Minecraft mc) {
+        if (!startHookDone) {
+            startHookDone = true;
+            if (runHook(HookEvent.START, () -> startMiningNow(mc))) {
+                return;
+            }
+        }
+        startMiningNow(mc);
+    }
+
+    private void startMiningNow(Minecraft mc) {
         state = State.MINING;
         stateTicks = 0;
         mineIdleTicks = 0;
@@ -432,6 +468,9 @@ public final class MinerController {
             if (mineIdleTicks > 20 * 10) {
                 if (mineRestarts >= 3) {
                     message("附近找不到可挖的矿石，任务暂停。换个地方后 /am start 继续。");
+                    if (runHook(HookEvent.MINING_DONE, () -> stop(true))) {
+                        return;
+                    }
                     stop(true);
                     return;
                 }
@@ -462,48 +501,93 @@ public final class MinerController {
             return;
         }
 
-        // 先执行回箱前指令/脚本，执行完再走向箱子。
-        if (startPreDeposit()) {
-            return;
-        }
-        startWalkToChest(level);
+        beginDeposit(reason);
     }
 
-    /** 开始回箱前指令；没有配置就返回 false，直接去箱子。 */
-    private boolean startPreDeposit() {
-        preDepositQueue.clear();
-        preDepositIndex = 0;
-        preDepositCooldown = 0;
-        preDepositDoneTicks = 0;
-        if (!config.preDepositEnabled) {
+    /** 回箱触发：先跑本次原因对应的脚本，再跑“回箱前”脚本，最后走向箱子。 */
+    private void beginDeposit(String reason) {
+        Runnable walk = this::startWalkToChest;
+        Runnable pre = () -> runHookOr(HookEvent.PRE_DEPOSIT, walk);
+        HookEvent reasonEvent = reasonEvent(reason);
+        if (reasonEvent != null) {
+            runHookOr(reasonEvent, pre);
+        } else {
+            pre.run();
+        }
+    }
+
+    private HookEvent reasonEvent(String reason) {
+        if (reason == null) {
+            return null;
+        }
+        if (reason.startsWith("背包")) {
+            return HookEvent.FULL;
+        }
+        if (reason.startsWith("镐")) {
+            return HookEvent.LOW_PICK;
+        }
+        if (reason.startsWith("定时")) {
+            return HookEvent.INTERVAL;
+        }
+        if (reason.startsWith("攒够")) {
+            return HookEvent.THRESHOLD;
+        }
+        return null;
+    }
+
+    private void runHookOr(HookEvent event, Runnable after) {
+        if (!runHook(event, after)) {
+            after.run();
+        }
+    }
+
+    /** 把事件挂的指令/脚本放进队列；没有内容返回 false。 */
+    private boolean runHook(HookEvent event, Runnable after) {
+        MinerConfig.Hook hook = config.hook(event);
+        if (hook == null || !hook.enabled) {
             return false;
         }
-        List<String> queue = new ArrayList<>();
-        for (String raw : config.preDepositCommands) {
-            addCommands(queue, raw);
+        List<String> queue = buildScriptQueue(hook);
+        if (queue.isEmpty()) {
+            return false;
         }
-        if (config.preDepositScript != null && !config.preDepositScript.isBlank()) {
+        clearScript();
+        scriptQueue.addAll(queue);
+        scriptAfter = after;
+        scriptLabel = event.label;
+        scriptIndex = 0;
+        scriptCooldown = 0;
+        scriptDoneTicks = 0;
+        scriptSettleTicks = hook.settleTicks;
+        scriptCommandDelayTicks = hook.commandDelayTicks;
+        scriptBudget = 200 + queue.size() * (hook.commandDelayTicks + 5) + hook.settleTicks;
+        state = State.SCRIPT;
+        stateTicks = 0;
+        BaritoneHook.cancelAll();
+        message("执行[" + event.label + "]：先发 " + queue.size() + " 条指令。");
+        return true;
+    }
+
+    private List<String> buildScriptQueue(MinerConfig.Hook hook) {
+        List<String> queue = new ArrayList<>();
+        if (hook.commands != null) {
+            for (String raw : hook.commands) {
+                addCommands(queue, raw);
+            }
+        }
+        if (hook.script != null && !hook.script.isBlank()) {
             try {
-                Path script = FabricLoader.getInstance().getConfigDir().resolve(config.preDepositScript.trim());
-                if (Files.isRegularFile(script)) {
+                Path script = FabricLoader.getInstance().getConfigDir().resolve(hook.script.trim());
+                if (Files.isRegularFile(script) && Files.size(script) <= 64 * 1024) {
                     for (String line : Files.readAllLines(script, StandardCharsets.UTF_8)) {
                         addCommands(queue, line);
                     }
                 }
             } catch (Throwable t) {
-                message("读回箱前脚本失败：" + t.getClass().getSimpleName());
+                message("读脚本失败（" + hook.script + "）：" + t.getClass().getSimpleName());
             }
         }
-        if (queue.isEmpty()) {
-            return false;
-        }
-        preDepositQueue.addAll(queue);
-        state = State.PREDEPOSIT;
-        stateTicks = 0;
-        BaritoneHook.cancelAll();
-        message("达到回箱条件（" + pendingDepositReason + "），先执行回箱前指令 "
-                + preDepositQueue.size() + " 条，执行完再回箱。");
-        return true;
+        return queue;
     }
 
     private void addCommands(List<String> out, String raw) {
@@ -525,39 +609,67 @@ public final class MinerController {
         }
     }
 
-    private void tickPreDeposit(Minecraft mc, LocalPlayer player, ClientLevel level) {
-        int budget = 200 + preDepositQueue.size() * (config.preDepositCommandDelayTicks + 5)
-                + config.preDepositSettleTicks;
-        if (stateTicks > budget) {
-            message("回箱前指令等待超时，先回箱。");
-            startWalkToChest(level);
+    private void tickScript(Minecraft mc, LocalPlayer player) {
+        if (stateTicks > scriptBudget) {
+            finishScript("脚本等待超时");
             return;
         }
-        if (preDepositCooldown > 0) {
-            preDepositCooldown--;
+        if (scriptCooldown > 0) {
+            scriptCooldown--;
             return;
         }
-        if (preDepositIndex >= preDepositQueue.size()) {
-            preDepositDoneTicks++;
-            if (preDepositDoneTicks >= Math.max(1, config.preDepositSettleTicks)) {
-                startWalkToChest(level);
+        if (scriptIndex >= scriptQueue.size()) {
+            scriptDoneTicks++;
+            if (scriptDoneTicks >= Math.max(1, scriptSettleTicks)) {
+                finishScript(null);
             }
             return;
         }
-        String cmd = preDepositQueue.get(preDepositIndex++);
+        String cmd = scriptQueue.get(scriptIndex++);
         try {
             if (player.connection != null) {
                 player.connection.sendCommand(cmd);
-                message("回箱前指令 " + preDepositIndex + "/" + preDepositQueue.size() + " 已发送");
+                message("[" + scriptLabel + "] " + scriptIndex + "/" + scriptQueue.size() + " 已发送");
             }
         } catch (Throwable t) {
-            message("回箱前指令发送失败：" + t.getClass().getSimpleName());
+            message("[" + scriptLabel + "] 指令发送失败：" + t.getClass().getSimpleName());
         }
-        preDepositCooldown = Math.max(0, config.preDepositCommandDelayTicks);
-        preDepositDoneTicks = 0;
+        scriptCooldown = Math.max(0, scriptCommandDelayTicks);
+        scriptDoneTicks = 0;
     }
 
-    private void startWalkToChest(ClientLevel level) {
+    private void finishScript(String note) {
+        Runnable after = scriptAfter;
+        String label = scriptLabel;
+        clearScript();
+        state = State.IDLE;
+        stateTicks = 0;
+        if (note != null) {
+            message("[" + label + "] " + note + "，继续下一步。");
+        }
+        if (after != null) {
+            after.run();
+        }
+    }
+
+    private void clearScript() {
+        scriptQueue.clear();
+        scriptIndex = 0;
+        scriptCooldown = 0;
+        scriptDoneTicks = 0;
+        scriptBudget = 0;
+        scriptAfter = null;
+        scriptLabel = "";
+        scriptSettleTicks = 20;
+        scriptCommandDelayTicks = 10;
+    }
+
+    private void startWalkToChest() {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            state = State.IDLE;
+            return;
+        }
         MinerConfig.ChestEntry entry = pickChest(level);
         if (entry == null) {
             message("所有箱子都满了，暂停挖矿。清空箱子后再 /am start。");
@@ -570,6 +682,7 @@ public final class MinerController {
         targetChest = entry.pos();
         ticksSinceDeposit = 0;
         walkRetries = 0;
+        postDepositDone = false;
         state = State.WALKING;
         stateTicks = 0;
         BaritoneHook.cancelAll();
@@ -852,6 +965,12 @@ public final class MinerController {
                 message("换镐没成功，现在这把只剩 " + pct + "%，继续挖但留意点。");
             }
             wantSparePick = false;
+        }
+        if (!postDepositDone) {
+            postDepositDone = true;
+            if (runHook(HookEvent.POST_DEPOSIT, this::resumeMining)) {
+                return;
+            }
         }
         resumeMining();
     }

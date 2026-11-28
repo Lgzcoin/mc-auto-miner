@@ -83,7 +83,10 @@ public class MinerConfig {
     /** 定时回箱间隔（秒），0 = 关闭定时。 */
     public int intervalSeconds = 900;
 
-    /** 回箱前是否执行自定义指令/脚本。 */
+    /** 生命周期事件挂的指令/脚本：开始、回箱前、爆仓、镐快坏、定时、回箱后、挖完、停止。 */
+    public List<Hook> hooks = new ArrayList<>();
+
+    /** 兼容 1.13 旧配置：回箱前是否执行自定义指令/脚本。 */
     public boolean preDepositEnabled = true;
     /** 回箱前按顺序执行的游戏指令（发给服务器，不需要写开头的 /）。 */
     public List<String> preDepositCommands = new ArrayList<>();
@@ -108,6 +111,49 @@ public class MinerConfig {
 
     /** 自动回收：镐子快坏了 / 背包快满时回箱，顺手从箱子里拿备用镐。 */
     public Recycle recycle = new Recycle();
+
+    /** 一个生命周期事件对应的指令/脚本。 */
+    public static class Hook {
+        /** HookEvent.key */
+        public String event = "";
+        public boolean enabled = true;
+        public List<String> commands = new ArrayList<>();
+        /** 放 config 目录的脚本文件名；一行一条，空 = 不读。 */
+        public String script = "";
+        public int commandDelayTicks = 10;
+        public int settleTicks = 20;
+
+        public Hook() {
+        }
+
+        public Hook(String event) {
+            this.event = event;
+        }
+    }
+
+    public Hook hook(HookEvent event) {
+        if (event == null || hooks == null) {
+            return null;
+        }
+        for (Hook hook : hooks) {
+            if (hook != null && event.key.equals(hook.event)) {
+                return hook;
+            }
+        }
+        return null;
+    }
+
+    public Hook hookOrCreate(HookEvent event) {
+        if (hooks == null) {
+            hooks = new ArrayList<>();
+        }
+        Hook hook = hook(event);
+        if (hook == null) {
+            hook = new Hook(event.key);
+            hooks.add(hook);
+        }
+        return hook;
+    }
 
     public static class Recycle {
         /** 总开关。 */
@@ -252,6 +298,40 @@ public class MinerConfig {
         if (preDepositCommandDelayTicks > 200) preDepositCommandDelayTicks = 200;
         if (preDepositSettleTicks < 0) preDepositSettleTicks = 0;
         if (preDepositSettleTicks > 600) preDepositSettleTicks = 600;
+
+        boolean hadHooks = hooks != null && !hooks.isEmpty();
+        if (hooks == null) hooks = new ArrayList<>();
+        for (HookEvent event : HookEvent.values()) {
+            Hook hook = null;
+            for (Hook candidate : hooks) {
+                if (event.key.equals(candidate.event)) {
+                    hook = candidate;
+                    break;
+                }
+            }
+            if (hook == null) {
+                hook = new Hook(event.key);
+                hooks.add(hook);
+            }
+            if (hook.commands == null) hook.commands = new ArrayList<>();
+            if (hook.script == null) hook.script = "";
+            if (hook.commandDelayTicks < 0) hook.commandDelayTicks = 0;
+            if (hook.commandDelayTicks > 200) hook.commandDelayTicks = 200;
+            if (hook.settleTicks < 0) hook.settleTicks = 0;
+            if (hook.settleTicks > 600) hook.settleTicks = 600;
+        }
+        // 1.13 的旧字段迁移到 PRE_DEPOSIT；已有 hooks 的配置不再覆盖。
+        if (!hadHooks) {
+            Hook pre = hook(HookEvent.PRE_DEPOSIT);
+            if (pre != null) {
+                pre.enabled = preDepositEnabled;
+                pre.commands.clear();
+                pre.commands.addAll(preDepositCommands);
+                pre.script = preDepositScript;
+                pre.commandDelayTicks = preDepositCommandDelayTicks;
+                pre.settleTicks = preDepositSettleTicks;
+            }
+        }
         if (returnRange < 1) returnRange = 1;
         if (returnRange > 6) returnRange = 6;
         if (recycle == null) recycle = new Recycle();
