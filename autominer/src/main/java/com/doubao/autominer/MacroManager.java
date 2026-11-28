@@ -572,7 +572,9 @@ public final class MacroManager {
                 r.keyPress(java.awt.event.KeyEvent.VK_META);
                 metaDown = true;
             }
+            r.delay(35);
             r.keyPress(awtKey);
+            r.delay(35);
             r.keyRelease(awtKey);
             return true;
         } catch (Throwable t) {
@@ -595,6 +597,7 @@ public final class MacroManager {
             try {
                 if (!GraphicsEnvironment.isHeadless()) {
                     robot = new Robot();
+                    robot.setAutoDelay(10);
                 }
             } catch (Throwable ignored) {
                 robot = null;
