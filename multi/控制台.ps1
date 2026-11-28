@@ -106,10 +106,11 @@ if (-not $botsRoot) {
 try { [System.IO.File]::WriteAllText($savedFile, $GameRoot, (New-Object System.Text.UTF8Encoding($false))) } catch { }
 
 function Get-BotDirs {
+    $nowPlan = @(Get-PlanNames)
     if (-not [string]::IsNullOrWhiteSpace($Bots)) {
         $wanted = @($Bots.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
-    } elseif ($planNames.Count -gt 0) {
-        $wanted = @($planNames)
+    } elseif ($nowPlan.Count -gt 0) {
+        $wanted = @($nowPlan)
     } else {
         # 没有配置文件的旧安装：保持原来的“扫 bots 目录”行为
         return @(Get-ChildItem $botsRoot -Directory | Where-Object { $_.Name -match "^[A-Za-z0-9_]{3,16}$" } | Sort-Object Name)
