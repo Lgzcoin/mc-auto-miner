@@ -432,6 +432,7 @@ if ([string]::IsNullOrWhiteSpace($GameRoot)) {
         $GameRoot = "$env:APPDATA\.minecraft"
     }
 }
+$GameRoot = $GameRoot.Trim().Trim([char]34).Trim([char]39)
 if (-not (Test-Path $GameRoot)) { Fail "找不到游戏目录：$GameRoot（用 -GameRoot 指定）" }
 Write-Host "游戏目录：$GameRoot"
 # 记下游戏目录，控制台.bat 会用这个，不用你每次传 -GameRoot
@@ -555,6 +556,60 @@ if ($Server) {
 } else {
     Write-Host "不自动进服：机器人只会打开游戏停在主菜单。" -ForegroundColor Yellow
 }
+
+# ---------- 先建 bots 目录（必须在模组检查之前） ----------
+# 以前模组检查失败会直接 exit，bots 一个都没建，控制台就永远说“找不到 bots”。
+# 现在先把号目录建出来，哪怕模组有问题，控制台也能打开看到号。
+$configSrc = Join-Path $GameRoot "config\autominer.json"
+$botsRoot = Join-Path $GameRoot "bots"
+if ([string]::IsNullOrWhiteSpace($PlanFile)) {
+    $PlanFile = Join-Path $PSScriptRoot "矿工配置.txt"
+}
+function Get-EarlyPlanNames {
+    $out = @()
+    if (Test-Path $PlanFile) {
+        foreach ($line in ((Read-TextFile $PlanFile) -split "`r?`n")) {
+            $t = $line.Trim()
+            if ($t -eq "" -or $t.StartsWith("#")) { continue }
+            $kv = $t -split "=", 2
+            if ($kv.Count -lt 2) { continue }
+            $k = $kv[0].Trim()
+            if ($k -match "^(密码|登录密码|password|pass|重连|重连秒数|重连间隔|retry|retrySeconds|进服指令|进服命令|onJoin|onJoinCommands)$") { continue }
+            $out += $k
+        }
+    }
+    if ($out.Count -eq 0) {
+        $out = @($Bots -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+    }
+    if ($out.Count -eq 0) { $out = @("Miner1", "Miner2") }
+    return $out
+}
+try {
+    if (-not (Test-Path $botsRoot)) { New-Item -ItemType Directory -Path $botsRoot -Force | Out-Null }
+    $earlyNames = @()
+    $earlyIdx = 0
+    foreach ($raw in @(Get-EarlyPlanNames)) {
+        $n = $raw.Trim()
+        if ($n -eq "") { continue }
+        if ($n -match "^[A-Za-z0-9_]{3,16}$") {
+            $safe = $n
+        } else {
+            do {
+                $earlyIdx++
+                $safe = "Miner" + $earlyIdx
+            } while (($earlyNames -contains $safe) -or (Test-Path (Join-Path $botsRoot $safe)))
+        }
+        $earlyNames += $safe
+        $dir = Join-Path $botsRoot $safe
+        if (-not (Test-Path $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            Write-Host ("  预建号目录：" + $dir) -ForegroundColor Gray
+        }
+    }
+} catch {
+    Write-Host ("  [提醒] 预建 bots 目录失败：" + $_.Exception.Message) -ForegroundColor Yellow
+}
+
 
 # ---------- 模组目录 ----------
 if ([string]::IsNullOrWhiteSpace($ModsSource)) {
@@ -822,7 +877,7 @@ if ($botPlan.Count -gt 0) {
 } else {
     $names = @($Bots.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
 }
-if ($names.Count -eq 0) { Fail "没有机器人名字（-Bots "Miner1,Miner2"，或在 矿工配置.txt 里写）" }
+if ($names.Count -eq 0) { $names = @("Miner1", "Miner2") }
 
 if ([string]::IsNullOrWhiteSpace($Auth) -and -not [string]::IsNullOrWhiteSpace($planPassword)) {
     $Auth = "/login " + $planPassword
@@ -846,7 +901,7 @@ foreach ($n in $names) {
     }
     $cand = $idx
     $safe = "Miner" + $cand
-    while (($finalNames -contains $safe) -or (Test-Path (Join-Path $botsRoot $safe))) {
+    while ($finalNames -contains $safe) {
         $cand++
         $safe = "Miner" + $cand
     }

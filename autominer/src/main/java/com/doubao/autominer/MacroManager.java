@@ -26,7 +26,8 @@ public final class MacroManager {
     private static final long MAX_STEP_DELAY = 5000L;
     private static final int MAX_STEPS = 400;
     private static final long AUTO_DELAY_MS = 350L;
-    private static final long KEY_GUARD_MS = 250L;
+    private static final long KEY_GUARD_MS = 450L;
+    private static final long SCREEN_WAIT_MS = 3500L;
 
     private static boolean auto = true;
     private static boolean loadedAuto = false;
@@ -46,6 +47,7 @@ public final class MacroManager {
     private static int playIndex = 0;
     private static long playStartMs = 0L;
     private static long keyGuardUntil = 0L;
+    private static long screenWaitUntil = 0L;
 
     private static Robot robot = null;
     private static boolean robotTried = false;
@@ -151,6 +153,18 @@ public final class MacroManager {
         }
     }
 
+    /** 标题比较时去掉颜色符和多余空格，避免同一个菜单因为 §6 之类颜色码对不上。 */
+    private static String cleanTitle(String t) {
+        if (t == null) {
+            return "";
+        }
+        return t.replaceAll("§.", "").replaceAll("\\s+", " ").trim();
+    }
+
+    private static boolean sameTitle(String a, String b) {
+        return cleanTitle(a).equals(cleanTitle(b));
+    }
+
     /** F7：开始/结束录制；没有界面时录「全局」宏，可以先录 Shift+F。 */
     public static void toggleRecord() {
         Minecraft mc = Minecraft.getInstance();
@@ -232,7 +246,22 @@ public final class MacroManager {
                 msg("[宏] §e还没有宏，先按 F7 录一个。");
                 return;
             }
-            name = all.get(all.size() - 1);
+            String fallback = null;
+            for (String n : all) {
+                if (sameTitle(n, name)) {
+                    fallback = n;
+                    break;
+                }
+            }
+            if (fallback == null && all.size() == 1) {
+                fallback = all.get(0);
+            }
+            if (fallback == null) {
+                msg("[宏] §e当前界面没有对应的宏。已有：" + String.join("、", all)
+                        + "。先打开对应菜单再按 F8，或用 /am macro play 名字。");
+                return;
+            }
+            name = fallback;
         }
         startPlay(name, false);
     }
@@ -245,12 +274,12 @@ public final class MacroManager {
             return false;
         }
         String cur = screenTitle(mc.gui.screen());
-        boolean global = plan.title.isBlank() || GLOBAL_TITLE.equals(plan.title);
+        boolean global = plan.title.isBlank() || sameTitle(plan.title, GLOBAL_TITLE);
         if (cur == null && !global) {
             msg("[宏] §e这个宏是界面宏，先按 Shift+F 打开对应菜单再按 F8。");
             return false;
         }
-        if (cur != null && !forceTitle && !global && !plan.title.isBlank() && !plan.title.equals(cur)) {
+        if (cur != null && !forceTitle && !global && !plan.title.isBlank() && !sameTitle(plan.title, cur)) {
             msg("[宏] §e这个宏是给「" + plan.title + "」用的，当前界面是「" + cur + "」。");
             return false;
         }
@@ -261,6 +290,7 @@ public final class MacroManager {
         playIndex = 0;
         playStartMs = System.currentTimeMillis();
         keyGuardUntil = 0L;
+        screenWaitUntil = playGlobal ? System.currentTimeMillis() + SCREEN_WAIT_MS : 0L;
         playing = true;
         msg("[宏] §a回放宏「" + sanitize(name) + "」，共 " + playSteps.size() + " 步。F8 可中途停止。");
         return true;
@@ -272,6 +302,7 @@ public final class MacroManager {
         playSteps.clear();
         playIndex = 0;
         keyGuardUntil = 0L;
+        screenWaitUntil = 0L;
         if (reason != null) {
             msg(reason);
         }
@@ -430,6 +461,13 @@ public final class MacroManager {
             if (elapsed < cursor) {
                 break;
             }
+            if ("CLICK".equals(s.kind()) && mc.gui.screen() == null) {
+                if (playGlobal && now < screenWaitUntil) {
+                    return;
+                }
+                stopPlay("§e菜单没打开：Shift+F 没有生效，或服务器菜单加载太慢。");
+                return;
+            }
             playIndex++;
             try {
                 switch (s.kind()) {
@@ -454,6 +492,7 @@ public final class MacroManager {
                         }
                         // 给菜单/界面留出响应时间，避免下一步点击太早。
                         keyGuardUntil = now + KEY_GUARD_MS;
+                        screenWaitUntil = now + SCREEN_WAIT_MS;
                         return;
                     }
                     default -> {
