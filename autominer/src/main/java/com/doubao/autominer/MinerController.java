@@ -75,6 +75,9 @@ public final class MinerController {
     private int scriptCommandDelayTicks = 10;
     private Runnable scriptAfter = null;
     private String scriptLabel = "";
+    private String scriptMacro = "";
+    private boolean scriptMacroPending = false;
+    private boolean scriptMacroRunning = false;
     private boolean startHookDone = false;
     private boolean postDepositDone = true;
     private boolean stopHookRunning = false;
@@ -541,14 +544,15 @@ public final class MinerController {
         }
     }
 
-    /** 把事件挂的指令/脚本放进队列；没有内容返回 false。 */
+    /** 把事件挂的宏/指令/脚本放进队列；没有内容返回 false。 */
     private boolean runHook(HookEvent event, Runnable after) {
         MinerConfig.Hook hook = config.hook(event);
         if (hook == null || !hook.enabled) {
             return false;
         }
         List<String> queue = buildScriptQueue(hook);
-        if (queue.isEmpty()) {
+        String macro = hook.macro == null ? "" : hook.macro.trim();
+        if (queue.isEmpty() && macro.isEmpty()) {
             return false;
         }
         clearScript();
@@ -560,11 +564,20 @@ public final class MinerController {
         scriptDoneTicks = 0;
         scriptSettleTicks = hook.settleTicks;
         scriptCommandDelayTicks = hook.commandDelayTicks;
+        scriptMacro = macro;
+        scriptMacroPending = !macro.isEmpty();
+        scriptMacroRunning = false;
         scriptBudget = 200 + queue.size() * (hook.commandDelayTicks + 5) + hook.settleTicks;
         state = State.SCRIPT;
         stateTicks = 0;
         BaritoneHook.cancelAll();
-        message("执行[" + event.label + "]：先发 " + queue.size() + " 条指令。");
+        if (!macro.isEmpty() && queue.isEmpty()) {
+            message("执行[" + event.label + "]：先跑宏「" + macro + "」。");
+        } else if (!macro.isEmpty()) {
+            message("执行[" + event.label + "]：先跑宏「" + macro + "」，再发 " + queue.size() + " 条指令。");
+        } else {
+            message("执行[" + event.label + "]：先发 " + queue.size() + " 条指令。");
+        }
         return true;
     }
 
@@ -610,6 +623,23 @@ public final class MinerController {
     }
 
     private void tickScript(Minecraft mc, LocalPlayer player) {
+        if (scriptMacroPending) {
+            scriptMacroPending = false;
+            if (MacroManager.startPlay(scriptMacro, true)) {
+                scriptMacroRunning = true;
+                message("[" + scriptLabel + "] 开始执行宏「" + scriptMacro + "」。");
+                return;
+            }
+            message("[" + scriptLabel + "] 宏「" + scriptMacro + "」启动失败，继续发指令。");
+        }
+        if (scriptMacroRunning) {
+            if (MacroManager.isPlaying()) {
+                return;
+            }
+            scriptMacroRunning = false;
+            stateTicks = 0;
+            message("[" + scriptLabel + "] 宏执行结束。");
+        }
         if (stateTicks > scriptBudget) {
             finishScript("脚本等待超时");
             return;
@@ -653,6 +683,9 @@ public final class MinerController {
     }
 
     private void clearScript() {
+        if (scriptMacroRunning) {
+            MacroManager.stopPlayback();
+        }
         scriptQueue.clear();
         scriptIndex = 0;
         scriptCooldown = 0;
@@ -660,6 +693,9 @@ public final class MinerController {
         scriptBudget = 0;
         scriptAfter = null;
         scriptLabel = "";
+        scriptMacro = "";
+        scriptMacroPending = false;
+        scriptMacroRunning = false;
         scriptSettleTicks = 20;
         scriptCommandDelayTicks = 10;
     }

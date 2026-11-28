@@ -352,6 +352,11 @@ public final class MacroManager {
         return recording || playing;
     }
 
+    /** 事件脚本用：宏是否还在回放。 */
+    public static boolean isPlaying() {
+        return playing;
+    }
+
     public static void setAuto(boolean on) {
         ensureAutoLoaded();
         auto = on;

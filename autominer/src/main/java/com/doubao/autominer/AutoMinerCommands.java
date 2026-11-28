@@ -286,6 +286,39 @@ public final class AutoMinerCommands {
                                                     reply(ctx, "已删除[" + event.label + "]指令：" + removed);
                                                     return 1;
                                                 })))
+                                .then(ClientCommands.literal("macro")
+                                        .executes(ctx -> {
+                                            HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                            if (event == null) {
+                                                reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                return 1;
+                                            }
+                                            MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                            reply(ctx, "[" + event.label + "]宏："
+                                                    + (hook.macro == null || hook.macro.isBlank() ? "空" : hook.macro));
+                                            return 1;
+                                        })
+                                        .then(ClientCommands.argument("名字", StringArgumentType.greedyString())
+                                                .executes(ctx -> {
+                                                    HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
+                                                    if (event == null) {
+                                                        reply(ctx, "没有这个事件。可用：" + hookKeys());
+                                                        return 1;
+                                                    }
+                                                    String macroName = StringArgumentType.getString(ctx, "名字").trim();
+                                                    MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
+                                                    if (macroName.equalsIgnoreCase("off") || macroName.equals("无")) {
+                                                        hook.macro = "";
+                                                        AutoMiner.config().save();
+                                                        reply(ctx, "已清空[" + event.label + "]的宏。");
+                                                    } else {
+                                                        hook.macro = macroName;
+                                                        AutoMiner.config().save();
+                                                        reply(ctx, "[" + event.label + "]宏：" + macroName
+                                                                + "（先跑宏，再发指令；宏文件在 宏/" + macroName + ".txt）");
+                                                    }
+                                                    return 1;
+                                                })))
                                 .then(ClientCommands.literal("clear").executes(ctx -> {
                                     HookEvent event = findHookEvent(StringArgumentType.getString(ctx, "事件"));
                                     if (event == null) {
@@ -294,8 +327,9 @@ public final class AutoMinerCommands {
                                     }
                                     MinerConfig.Hook hook = AutoMiner.config().hookOrCreate(event);
                                     hook.commands.clear();
+                                    hook.macro = "";
                                     AutoMiner.config().save();
-                                    reply(ctx, "已清空[" + event.label + "]的指令（脚本文件仍会读）。");
+                                    reply(ctx, "已清空[" + event.label + "]的宏和指令（脚本文件仍会读）。");
                                     return 1;
                                 }))
                                 .then(ClientCommands.literal("script")
@@ -519,6 +553,7 @@ public final class AutoMinerCommands {
             sb.append('\n').append(hook.enabled ? "§a开" : "§7关").append("  ")
                     .append(event.label).append("  §7").append(event.key)
                     .append("  §8").append(hook.commands.size()).append(" 条")
+                    .append(hook.macro == null || hook.macro.isBlank() ? "" : "  §b宏:" + hook.macro)
                     .append(hook.script == null || hook.script.isBlank() ? "" : " + " + hook.script);
         }
         return sb.toString();
@@ -529,6 +564,7 @@ public final class AutoMinerCommands {
         StringBuilder sb = new StringBuilder(event.label + "（" + event.key + "）：")
                 .append(hook.enabled ? "开" : "关");
         sb.append("\n").append(event.description);
+        sb.append("\n宏：").append(hook.macro == null || hook.macro.isBlank() ? "空" : hook.macro);
         sb.append("\n脚本：").append(hook.script == null || hook.script.isBlank() ? "不读" : hook.script);
         sb.append("；间隔 ").append(hook.commandDelayTicks).append(" tick")
                 .append("；执行完等 ").append(hook.settleTicks).append(" tick");
@@ -585,6 +621,7 @@ public final class AutoMinerCommands {
             MinerConfig.Hook hook = config.hookOrCreate(event);
             builder.append('\n').append(hook.enabled ? "开 " : "关 ").append(event.label)
                     .append("：").append(hook.commands.size()).append(" 条")
+                    .append(hook.macro == null || hook.macro.isBlank() ? "" : " + 宏:" + hook.macro)
                     .append(hook.script == null || hook.script.isBlank() ? "" : " + " + hook.script);
         }
         reply(ctx, builder.toString());

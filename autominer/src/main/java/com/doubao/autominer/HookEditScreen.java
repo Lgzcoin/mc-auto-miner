@@ -30,7 +30,7 @@ public class HookEditScreen extends Screen {
         int left = 20;
         int width = this.width - 40;
 
-        this.addRenderableWidget(new StringWidget(left, 10, width, 18,
+        this.addRenderableWidget(new StringWidget(left, 8, width, 18,
                 Component.literal("§e" + event.label + "  §7" + event.description), this.font));
 
         this.addRenderableWidget(Button.builder(
@@ -39,11 +39,23 @@ public class HookEditScreen extends Screen {
                     hook.enabled = !hook.enabled;
                     config.save();
                     rebuild();
-                }).bounds(cx - 70, 32, 140, 18).build());
+                }).bounds(cx - 70, 28, 140, 18).build());
 
-        this.addRenderableWidget(new StringWidget(left, 58, width, 14,
-                Component.literal("游戏指令（用 | 分隔，按顺序发；不用写开头 /；例：/home|/kit miner）"), this.font));
-        EditBox commandBox = new EditBox(this.font, left, 74, width, 18, Component.literal("/home|/kit miner"));
+        this.addRenderableWidget(new StringWidget(left, 48, width, 14,
+                Component.literal("宏（可选；先执行宏，再发指令；宏名对应 宏/<名字>.txt）"), this.font));
+        EditBox macroBox = new EditBox(this.font, left, 64, width, 18,
+                Component.literal("留空=不用宏，例如 回箱"));
+        macroBox.setMaxLength(128);
+        macroBox.setValue(hook.macro == null ? "" : hook.macro);
+        macroBox.setResponder(text -> {
+            hook.macro = text.trim();
+            config.save();
+        });
+        this.addRenderableWidget(macroBox);
+
+        this.addRenderableWidget(new StringWidget(left, 86, width, 14,
+                Component.literal("游戏指令（用 | 分隔，按顺序发；不用写开头 /；例：home|kit miner）"), this.font));
+        EditBox commandBox = new EditBox(this.font, left, 102, width, 18, Component.literal("home|kit miner"));
         commandBox.setMaxLength(512);
         commandBox.setValue(String.join("|", hook.commands));
         commandBox.setResponder(text -> {
@@ -58,9 +70,9 @@ public class HookEditScreen extends Screen {
         });
         this.addRenderableWidget(commandBox);
 
-        this.addRenderableWidget(new StringWidget(left, 100, width, 14,
+        this.addRenderableWidget(new StringWidget(left, 124, width, 14,
                 Component.literal("脚本文件（放 config 目录；一行一条，也可 | 分隔；空 = 不读）"), this.font));
-        EditBox scriptBox = new EditBox(this.font, left, 116, Math.min(260, width), 18,
+        EditBox scriptBox = new EditBox(this.font, left, 140, Math.min(260, width), 18,
                 Component.literal("例如 hook_home.txt"));
         scriptBox.setMaxLength(128);
         scriptBox.setValue(hook.script == null ? "" : hook.script);
@@ -70,9 +82,9 @@ public class HookEditScreen extends Screen {
         });
         this.addRenderableWidget(scriptBox);
 
-        this.addRenderableWidget(new StringWidget(left, 142, 170, 14,
+        this.addRenderableWidget(new StringWidget(left, 162, 170, 14,
                 Component.literal("指令间隔（tick，20=1秒）"), this.font));
-        EditBox delayBox = new EditBox(this.font, left, 158, 80, 18, Component.literal("10"));
+        EditBox delayBox = new EditBox(this.font, left, 178, 80, 18, Component.literal("10"));
         delayBox.setMaxLength(3);
         delayBox.setValue(String.valueOf(hook.commandDelayTicks));
         delayBox.setResponder(text -> {
@@ -81,9 +93,9 @@ public class HookEditScreen extends Screen {
         });
         this.addRenderableWidget(delayBox);
 
-        this.addRenderableWidget(new StringWidget(left + 105, 142, 170, 14,
+        this.addRenderableWidget(new StringWidget(left + 105, 162, 170, 14,
                 Component.literal("执行完再等（tick）"), this.font));
-        EditBox settleBox = new EditBox(this.font, left + 105, 158, 80, 18, Component.literal("20"));
+        EditBox settleBox = new EditBox(this.font, left + 105, 178, 80, 18, Component.literal("20"));
         settleBox.setMaxLength(3);
         settleBox.setValue(String.valueOf(hook.settleTicks));
         settleBox.setResponder(text -> {
@@ -94,16 +106,17 @@ public class HookEditScreen extends Screen {
 
         this.addRenderableWidget(Button.builder(Component.literal("清空这个事件"), b -> {
             hook.commands.clear();
+            hook.macro = "";
             hook.script = "";
             config.save();
             rebuild();
-        }).bounds(cx - 155, 190, 100, 20).build());
+        }).bounds(cx - 155, 200, 100, 20).build());
 
         this.addRenderableWidget(Button.builder(Component.literal("返回"), b -> onClose())
-                .bounds(cx + 55, 190, 100, 20).build());
+                .bounds(cx + 55, 200, 100, 20).build());
 
-        this.addRenderableWidget(new StringWidget(left, 214, width, 12,
-                Component.literal("§7改动即时保存；脚本只发游戏指令，不运行 .bat/.sh。"), this.font));
+        this.addRenderableWidget(new StringWidget(left, 224, width, 12,
+                Component.literal("§7改动即时保存；空宏=只用指令；宏和指令都有时，先跑宏，再按间隔发指令。"), this.font));
     }
 
     private void rebuild() {
