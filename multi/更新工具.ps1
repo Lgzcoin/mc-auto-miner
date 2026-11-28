@@ -281,6 +281,14 @@ try {
         throw "没拿到新模组 jar。"
     }
 
+    # ---------- 替换信息工具（新包里带 infotools 才换，没带就保留） ----------
+    $newInfo = @(Get-ChildItem -Path (Join-Path $pkgRoot "mods") -Filter "infotools-*.jar" -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+    if ($newInfo.Count -gt 0) {
+        Get-ChildItem -Path $mods -Filter "infotools-*.jar" -ErrorAction SilentlyContinue | Remove-Item -Force
+        Copy-Item $newInfo[0].FullName (Join-Path $mods $newInfo[0].Name) -Force
+        Say ("已更新信息工具：" + $newInfo[0].Name) "Green"
+    }
+
     # ---------- 复查 ----------
     if ((Test-Scripts $multi) -gt 0) { throw "替换后脚本语法检查没过。" }
     $after = Get-LocalModVersion
