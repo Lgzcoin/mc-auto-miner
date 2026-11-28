@@ -487,7 +487,9 @@ public final class MacroManager {
                     }
                     case "KEY" -> {
                         if (!injectKey(mc, s.key(), s.mods())) {
-                            stopPlay("§c按键回放失败：系统不允许模拟按键，请保持游戏窗口在前台。");
+                            stopPlay("§c按键回放失败：" + (keyError.isBlank()
+                                    ? "系统没有把按键送进游戏" : keyError)
+                                    + "。请用窗口模式、不要最小化；仍不行就改用手点一次。");
                             return;
                         }
                         // 给菜单/界面留出响应时间，避免下一步点击太早。
@@ -515,8 +517,13 @@ public final class MacroManager {
     }
 
     /** 优先发真实系统按键，这样 Shift+F 能触发服务器/模组的全局快捷键；失败再退回界面事件。 */
+    private static String keyError = "";
+
     private static boolean injectKey(Minecraft mc, int key, int mods) {
-        if (mc.isWindowActive() && sendKeyWithRobot(key, mods)) {
+        // 不再用 mc.isWindowActive() 当前置条件：部分 Windows/PCL 组合下它会在窗口已经
+        // 前台时返回 false，导致 Shift+F 直接走“菜单没打开”。这里先无条件试系统按键。
+        keyError = "";
+        if (sendKeyWithRobot(key, mods)) {
             return true;
         }
         Screen cur = mc.gui.screen();
@@ -532,7 +539,12 @@ public final class MacroManager {
     private static boolean sendKeyWithRobot(int key, int mods) {
         Robot r = robot();
         int awtKey = toAwtKey(key);
-        if (r == null || awtKey == 0) {
+        if (r == null) {
+            keyError = "Java Robot 不可用（系统禁止模拟按键）";
+            return false;
+        }
+        if (awtKey == 0) {
+            keyError = "这个键没有对应的系统按键";
             return false;
         }
         boolean shift = (mods & GLFW.GLFW_MOD_SHIFT) != 0;
@@ -564,6 +576,7 @@ public final class MacroManager {
             r.keyRelease(awtKey);
             return true;
         } catch (Throwable t) {
+            keyError = "系统拒绝发送按键";
             return false;
         } finally {
             try {
