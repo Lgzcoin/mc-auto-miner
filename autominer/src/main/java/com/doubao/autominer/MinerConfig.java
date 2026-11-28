@@ -83,6 +83,17 @@ public class MinerConfig {
     /** 定时回箱间隔（秒），0 = 关闭定时。 */
     public int intervalSeconds = 900;
 
+    /** 回箱前是否执行自定义指令/脚本。 */
+    public boolean preDepositEnabled = true;
+    /** 回箱前按顺序执行的游戏指令（发给服务器，不需要写开头的 /）。 */
+    public List<String> preDepositCommands = new ArrayList<>();
+    /** 回箱前脚本文件名，放 config 目录；一行一条指令，也可用 | 分隔；空 = 不读。 */
+    public String preDepositScript = "pre_deposit.txt";
+    /** 每条回箱前指令之间等几 tick（20 tick = 1 秒）。 */
+    public int preDepositCommandDelayTicks = 10;
+    /** 最后一条指令执行完，再等几 tick 才走向箱子。 */
+    public int preDepositSettleTicks = 20;
+
     /** 回箱触发用的“指定矿物”：物品 id，空字符串 = 关闭。 */
     public String depositTriggerItem = "minecraft:diamond";
 
@@ -235,6 +246,12 @@ public class MinerConfig {
         if (depositTriggerCount > 3456) depositTriggerCount = 3456;
         if (intervalSeconds < 0) intervalSeconds = 0;
         if (intervalSeconds > 86400) intervalSeconds = 86400;
+        if (preDepositCommands == null) preDepositCommands = new ArrayList<>();
+        if (preDepositScript == null) preDepositScript = "";
+        if (preDepositCommandDelayTicks < 0) preDepositCommandDelayTicks = 0;
+        if (preDepositCommandDelayTicks > 200) preDepositCommandDelayTicks = 200;
+        if (preDepositSettleTicks < 0) preDepositSettleTicks = 0;
+        if (preDepositSettleTicks > 600) preDepositSettleTicks = 600;
         if (returnRange < 1) returnRange = 1;
         if (returnRange > 6) returnRange = 6;
         if (recycle == null) recycle = new Recycle();

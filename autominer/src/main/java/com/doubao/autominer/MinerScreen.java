@@ -9,7 +9,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /**
- * 图形界面：M 键打开，分三页（挖矿种类 / 存矿箱子 / 设置与运行）。
+ * 图形界面：M 键打开，分四页（挖矿种类 / 存矿箱子 / 设置与运行 / 回箱前指令）。
  * 只用原版控件，不自己画文字，避免不同渲染后端的兼容问题。
  */
 public class MinerScreen extends Screen {
@@ -39,20 +39,21 @@ public class MinerScreen extends Screen {
         switch (page) {
             case 0 -> initOres(cx);
             case 1 -> initChests(cx);
-            default -> initSettings(cx);
+            case 2 -> initSettings(cx);
+            default -> initPreDeposit(cx);
         }
 
         // 底部翻页
         this.addRenderableWidget(Button.builder(Component.literal("◀ 上一页"), b -> {
-            page = (page + 2) % 3;
+            page = (page + 3) % 4;
             refreshLater();
         }).bounds(cx - 150, footerY, 90, 20).build());
 
         this.addRenderableWidget(new StringWidget(cx - 50, footerY + 6, 100, 10,
-                Component.literal("§8" + (page + 1) + " / 3"), this.font));
+                Component.literal("§8" + (page + 1) + " / 4"), this.font));
 
         this.addRenderableWidget(Button.builder(Component.literal("下一页 ▶"), b -> {
-            page = (page + 1) % 3;
+            page = (page + 1) % 4;
             refreshLater();
         }).bounds(cx + 60, footerY, 90, 20).build());
 
@@ -274,6 +275,82 @@ public class MinerScreen extends Screen {
                 + "  §7箱子：§f" + config.chests.size() + " 个";
         this.addRenderableWidget(new MultiLineTextWidget(cx - labelW / 2, 192,
                 Component.literal(status), this.font).setMaxWidth(labelW).setMaxRows(2));
+    }
+
+    // ------------------------------------------------------------ 第四页：回箱前指令
+
+    private void initPreDeposit(int cx) {
+        MinerConfig config = config();
+        int labelW = Math.min(440, this.width - 40);
+        int labelX = cx - labelW / 2;
+
+        this.addRenderableWidget(new StringWidget(cx - 220, 12, 440, 20,
+                Component.literal("§e回箱前指令/脚本  §7（达到回箱条件后，先执行，再回箱）"), this.font));
+
+        this.addRenderableWidget(Button.builder(
+                Component.literal("回箱前执行：" + (config.preDepositEnabled ? "§a开" : "§7关")),
+                b -> {
+                    config.preDepositEnabled = !config.preDepositEnabled;
+                    config.save();
+                    refreshLater();
+                }).bounds(cx - 90, 34, 180, 20).build());
+
+        this.addRenderableWidget(new StringWidget(labelX, 58, labelW, 20,
+                Component.literal("指令（用 | 分隔，按顺序发；例：/home|/kit miner|/msg 队友 回箱）"), this.font));
+        EditBox cmdBox = new EditBox(this.font, cx - 210, 76, 420, 18, Component.literal("/home|/kit miner"));
+        cmdBox.setMaxLength(512);
+        cmdBox.setValue(String.join("|", config.preDepositCommands));
+        cmdBox.setResponder(text -> {
+            config.preDepositCommands.clear();
+            for (String part : text.split("\\|")) {
+                String cmd = part.trim();
+                if (!cmd.isEmpty()) {
+                    config.preDepositCommands.add(cmd);
+                }
+            }
+            config.save();
+        });
+        this.addRenderableWidget(cmdBox);
+
+        this.addRenderableWidget(new StringWidget(labelX, 100, labelW, 20,
+                Component.literal("脚本文件（放 config 目录；一行一条，也可 | 分隔；空 = 不读）"), this.font));
+        EditBox scriptBox = new EditBox(this.font, cx - 210, 118, 280, 18,
+                Component.literal("pre_deposit.txt"));
+        scriptBox.setMaxLength(128);
+        scriptBox.setValue(config.preDepositScript == null ? "" : config.preDepositScript);
+        scriptBox.setResponder(text -> {
+            config.preDepositScript = text.trim();
+            config.save();
+        });
+        this.addRenderableWidget(scriptBox);
+
+        this.addRenderableWidget(new StringWidget(labelX, 142, 180, 20,
+                Component.literal("指令间隔（tick，20=1秒）"), this.font));
+        EditBox delayBox = new EditBox(this.font, cx - 210, 160, 90, 18, Component.literal("10"));
+        delayBox.setMaxLength(3);
+        delayBox.setValue(String.valueOf(config.preDepositCommandDelayTicks));
+        delayBox.setResponder(text -> {
+            int value = parseInt(text, config.preDepositCommandDelayTicks);
+            config.preDepositCommandDelayTicks = Math.max(0, Math.min(200, value));
+            config.save();
+        });
+        this.addRenderableWidget(delayBox);
+
+        this.addRenderableWidget(new StringWidget(cx + 30, 142, 180, 20,
+                Component.literal("执行完再等（tick）"), this.font));
+        EditBox settleBox = new EditBox(this.font, cx + 30, 160, 90, 18, Component.literal("20"));
+        settleBox.setMaxLength(3);
+        settleBox.setValue(String.valueOf(config.preDepositSettleTicks));
+        settleBox.setResponder(text -> {
+            int value = parseInt(text, config.preDepositSettleTicks);
+            config.preDepositSettleTicks = Math.max(0, Math.min(600, value));
+            config.save();
+        });
+        this.addRenderableWidget(settleBox);
+
+        this.addRenderableWidget(new MultiLineTextWidget(labelX, 186,
+                Component.literal("§7顺序：条件 → 指令/脚本 → 等待 → 回箱；脚本只发游戏指令，不跑 .bat/.sh"), this.font)
+                .setMaxWidth(labelW).setMaxRows(1));
     }
 
     private static int parseInt(String text, int fallback) {

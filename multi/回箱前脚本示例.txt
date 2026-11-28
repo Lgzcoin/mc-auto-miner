@@ -1,0 +1,7 @@
+# 回箱前指令脚本示例
+# 放到 .minecraft/config/pre_deposit.txt（或你填的文件名）
+# 一行一条，发给服务器；不用写开头的 /；# 开头是注释；也可用 | 分隔多条
+#
+# /home
+# /kit miner
+# /msg 队友 回箱

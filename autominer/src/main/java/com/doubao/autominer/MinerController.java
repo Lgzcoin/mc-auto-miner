@@ -1,5 +1,6 @@
 package com.doubao.autominer;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -18,6 +19,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 主循环：挖矿 → 到点/背包满 → 走到箱子 → 开箱存矿 → 回去继续挖。
  */
@@ -26,6 +33,7 @@ public final class MinerController {
         IDLE("空闲"),
         GOTO("前往基地"),
         MINING("挖矿中"),
+        PREDEPOSIT("回箱前执行指令"),
         WALKING("前往箱子"),
         OPENING("开箱子"),
         DEPOSITING("存放矿物"),
@@ -57,6 +65,11 @@ public final class MinerController {
     private BlockPos targetChest = null;
     private int startPointTries = 0;
     private GetJob getJob = null;
+    private String pendingDepositReason = "";
+    private final List<String> preDepositQueue = new ArrayList<>();
+    private int preDepositIndex = 0;
+    private int preDepositCooldown = 0;
+    private int preDepositDoneTicks = 0;
 
     /** 这次回箱是不是为了换镐；箱子里的备用镐试拿过一次没有。 */
     private boolean wantSparePick = false;
@@ -273,6 +286,11 @@ public final class MinerController {
         targetChest = null;
         mineIdleTicks = 0;
         mineRestarts = 0;
+        preDepositQueue.clear();
+        preDepositIndex = 0;
+        preDepositCooldown = 0;
+        preDepositDoneTicks = 0;
+        pendingDepositReason = "";
         if (!silent) {
             message("已停止自动采矿。");
         }
@@ -326,6 +344,7 @@ public final class MinerController {
             case IDLE -> enterMining(mc, player);
             case GOTO -> tickGoto(mc, player);
             case MINING -> tickMining(mc, player, level);
+            case PREDEPOSIT -> tickPreDeposit(mc, player, level);
             case WALKING -> tickWalking(mc, player, level);
             case OPENING -> tickOpening(mc, player, level);
             case DEPOSITING -> tickDepositing(mc, player, level);
@@ -432,6 +451,7 @@ public final class MinerController {
         }
         wantSparePick = config.recycle.enabled && reason.startsWith("镐");
         sparePickTried = false;
+        pendingDepositReason = reason;
 
         if (config.chests.isEmpty()) {
             message("要回箱了（" + reason + "），但还没配置箱子。用 /am chest add <名字> 对着箱子添加。");
@@ -442,6 +462,102 @@ public final class MinerController {
             return;
         }
 
+        // 先执行回箱前指令/脚本，执行完再走向箱子。
+        if (startPreDeposit()) {
+            return;
+        }
+        startWalkToChest(level);
+    }
+
+    /** 开始回箱前指令；没有配置就返回 false，直接去箱子。 */
+    private boolean startPreDeposit() {
+        preDepositQueue.clear();
+        preDepositIndex = 0;
+        preDepositCooldown = 0;
+        preDepositDoneTicks = 0;
+        if (!config.preDepositEnabled) {
+            return false;
+        }
+        List<String> queue = new ArrayList<>();
+        for (String raw : config.preDepositCommands) {
+            addCommands(queue, raw);
+        }
+        if (config.preDepositScript != null && !config.preDepositScript.isBlank()) {
+            try {
+                Path script = FabricLoader.getInstance().getConfigDir().resolve(config.preDepositScript.trim());
+                if (Files.isRegularFile(script)) {
+                    for (String line : Files.readAllLines(script, StandardCharsets.UTF_8)) {
+                        addCommands(queue, line);
+                    }
+                }
+            } catch (Throwable t) {
+                message("读回箱前脚本失败：" + t.getClass().getSimpleName());
+            }
+        }
+        if (queue.isEmpty()) {
+            return false;
+        }
+        preDepositQueue.addAll(queue);
+        state = State.PREDEPOSIT;
+        stateTicks = 0;
+        BaritoneHook.cancelAll();
+        message("达到回箱条件（" + pendingDepositReason + "），先执行回箱前指令 "
+                + preDepositQueue.size() + " 条，执行完再回箱。");
+        return true;
+    }
+
+    private void addCommands(List<String> out, String raw) {
+        if (raw == null) {
+            return;
+        }
+        String line = raw.replace("\uFEFF", "").trim();
+        if (line.isEmpty() || line.startsWith("#")) {
+            return;
+        }
+        for (String part : line.split("\\|")) {
+            String cmd = part.trim();
+            if (cmd.startsWith("/")) {
+                cmd = cmd.substring(1);
+            }
+            if (!cmd.isEmpty() && cmd.length() <= 240 && out.size() < 50) {
+                out.add(cmd);
+            }
+        }
+    }
+
+    private void tickPreDeposit(Minecraft mc, LocalPlayer player, ClientLevel level) {
+        int budget = 200 + preDepositQueue.size() * (config.preDepositCommandDelayTicks + 5)
+                + config.preDepositSettleTicks;
+        if (stateTicks > budget) {
+            message("回箱前指令等待超时，先回箱。");
+            startWalkToChest(level);
+            return;
+        }
+        if (preDepositCooldown > 0) {
+            preDepositCooldown--;
+            return;
+        }
+        if (preDepositIndex >= preDepositQueue.size()) {
+            preDepositDoneTicks++;
+            if (preDepositDoneTicks >= Math.max(1, config.preDepositSettleTicks)) {
+                startWalkToChest(level);
+            }
+            return;
+        }
+        String cmd = preDepositQueue.get(preDepositIndex++);
+        try {
+            if (player.connection != null) {
+                player.connection.sendCommand(cmd);
+                message("回箱前指令 " + preDepositIndex + "/" + preDepositQueue.size() + " 已发送");
+            }
+        } catch (Throwable t) {
+            message("回箱前指令发送失败：" + t.getClass().getSimpleName());
+        }
+        preDepositCooldown = Math.max(0, config.preDepositCommandDelayTicks);
+        preDepositDoneTicks = 0;
+    }
+
+    private void startWalkToChest(ClientLevel level) {
         MinerConfig.ChestEntry entry = pickChest(level);
         if (entry == null) {
             message("所有箱子都满了，暂停挖矿。清空箱子后再 /am start。");
@@ -451,7 +567,6 @@ public final class MinerController {
             state = State.IDLE;
             return;
         }
-
         targetChest = entry.pos();
         ticksSinceDeposit = 0;
         walkRetries = 0;
@@ -459,7 +574,8 @@ public final class MinerController {
         stateTicks = 0;
         BaritoneHook.cancelAll();
         BaritoneHook.walkTo(targetChest, config.returnRange);
-        message("准备回箱存矿（" + reason + "）：" + entry.describe());
+        message("准备回箱存矿（" + pendingDepositReason + "）：" + entry.describe());
+        pendingDepositReason = "";
     }
 
     /** 为什么该回箱了；不该回就返回 null。 */
