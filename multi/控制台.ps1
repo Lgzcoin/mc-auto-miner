@@ -27,20 +27,52 @@ trap {
     exit 1
 }
 
+# 从 矿工配置.txt 读“当前要显示的号”。控制台以这个文件为准，不再把 bots 里
+# 已经删掉、但目录还没清的号重新列出来。
+function Get-PlanNames {
+    $out = @()
+    $planFile = Join-Path $PSScriptRoot "矿工配置.txt"
+    if (-not (Test-Path $planFile)) { return $out }
+    foreach ($line in (Get-Content $planFile -Encoding UTF8)) {
+        $t = "$line".Trim()
+        if ($t -eq "" -or $t.StartsWith("#")) { continue }
+        $kv = $t -split "=", 2
+        if ($kv.Count -lt 2) { continue }
+        $k = $kv[0].Trim()
+        if ($k -match "^(密码|登录密码|password|pass|重连|重连秒数|重连间隔|retry|retrySeconds|进服指令|进服命令|onJoin|onJoinCommands)$") { continue }
+        if ($k -match "^[A-Za-z0-9_]{3,16}$") { $out += $k }
+    }
+    return $out
+}
+
+$planNames = @(Get-PlanNames)
+
 # 找游戏目录：命令行 > 一键多开记下的 游戏目录.txt > 默认 .minecraft > 在 versions 里搜 bots
 $savedFile = Join-Path $PSScriptRoot "游戏目录.txt"
 $candidates = @()
-if (-not [string]::IsNullOrWhiteSpace($GameRoot)) { $candidates += $GameRoot }
+if (-not [string]::IsNullOrWhiteSpace($GameRoot)) { $candidates += ($GameRoot -replace '"', '').Trim() }
 if (Test-Path $savedFile) {
     $t = Get-Content $savedFile -Raw
-    if ($t) { $candidates += $t.Trim() }
+    if ($t) { $candidates += ($t -replace '"', '').Trim() }
 }
 $candidates += "$env:APPDATA\.minecraft"
 
 $botsRoot = $null
+$fallbackRoot = $null
 foreach ($c in $candidates) {
-    if ($c -and (Test-Path (Join-Path $c "bots"))) {
-        $botsRoot = Join-Path $c "bots"
+    if ([string]::IsNullOrWhiteSpace($c)) { continue }
+    $br = Join-Path $c "bots"
+    if (-not (Test-Path $br)) { continue }
+    if (-not $fallbackRoot) { $fallbackRoot = $br }
+    $matched = 0
+    if ($planNames.Count -gt 0) {
+        foreach ($n in $planNames) {
+            if (Test-Path (Join-Path $br $n)) { $matched++ }
+        }
+    }
+    # 优先选“配置里的号真的存在”的游戏目录，避免旧 游戏目录.txt 指向测试目录。
+    if ($planNames.Count -eq 0 -or $matched -gt 0) {
+        $botsRoot = $br
         $GameRoot = $c
         break
     }
@@ -55,6 +87,10 @@ if (-not $botsRoot) {
         }
     }
 }
+if (-not $botsRoot -and $fallbackRoot) {
+    $botsRoot = $fallbackRoot
+    $GameRoot = Split-Path -Parent $fallbackRoot
+}
 if (-not $botsRoot) {
     Write-Host ""
     Write-Host "[错误] 找不到 bots 目录，说明还没成功跑过 启动多开.bat。" -ForegroundColor Red
@@ -66,13 +102,20 @@ if (-not $botsRoot) {
     Read-Host | Out-Null
     exit 1
 }
+# 把真正选中的目录记回去，下次不用再猜。
+try { [System.IO.File]::WriteAllText($savedFile, $GameRoot, (New-Object System.Text.UTF8Encoding($false))) } catch { }
 
 function Get-BotDirs {
-    if ([string]::IsNullOrWhiteSpace($Bots)) {
+    if (-not [string]::IsNullOrWhiteSpace($Bots)) {
+        $wanted = @($Bots.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+    } elseif ($planNames.Count -gt 0) {
+        $wanted = @($planNames)
+    } else {
+        # 没有配置文件的旧安装：保持原来的“扫 bots 目录”行为
         return @(Get-ChildItem $botsRoot -Directory | Where-Object { $_.Name -match "^[A-Za-z0-9_]{3,16}$" } | Sort-Object Name)
     }
     $list = @()
-    foreach ($n in ($Bots.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })) {
+    foreach ($n in $wanted) {
         $d = Join-Path $botsRoot $n
         if (Test-Path $d) { $list += Get-Item $d }
     }
