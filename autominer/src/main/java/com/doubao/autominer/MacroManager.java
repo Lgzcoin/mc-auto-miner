@@ -2,6 +2,11 @@ package com.doubao.autominer;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.Robot;
+import com.sun.jna.Pointer;
+import com.sun.jna.platform.win32.BaseTSD;
+import com.sun.jna.platform.win32.User32;
+import com.sun.jna.platform.win32.WinDef;
+import com.sun.jna.platform.win32.WinUser;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -550,7 +555,7 @@ public final class MacroManager {
         // 不再用 mc.isWindowActive() 当前置条件：部分 Windows/PCL 组合下它会在窗口已经
         // 前台时返回 false，导致 Shift+F 直接走“菜单没打开”。这里先无条件试系统按键。
         keyError = "";
-        if (sendKeyWithRobot(key, mods)) {
+        if (sendKeyWithRobot(mc, key, mods)) {
             return true;
         }
         Screen cur = mc.gui.screen();
@@ -563,7 +568,13 @@ public final class MacroManager {
         return false;
     }
 
-    private static boolean sendKeyWithRobot(int key, int mods) {
+    private static boolean sendKeyWithRobot(Minecraft mc, int key, int mods) {
+        // 先走 Windows 原生 SendInput：Minecraft 启动时会把 java.awt.headless 强制设成 true，
+        // 导致 AWT Robot 永远不可用；SendInput 不依赖 AWT，窗口在前台就能发键。
+        if (sendKeyWithWin32(mc, key, mods)) {
+            return true;
+        }
+        // 老路径保留：只有原生注入失败时才尝试 AWT Robot。
         Robot r = robot();
         int awtKey = toAwtKey(key);
         if (r == null) {
@@ -615,6 +626,66 @@ public final class MacroManager {
                 if (shiftDown) r.keyRelease(java.awt.event.KeyEvent.VK_SHIFT);
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+    /** 用 Windows SendInput 发真实按键；不依赖 AWT，因此不受 java.awt.headless=true 影响。 */
+    private static boolean sendKeyWithWin32(Minecraft mc, int key, int mods) {
+        int vk = toAwtKey(key);
+        if (vk == 0) {
+            keyError = "这个键没有对应的系统按键";
+            return false;
+        }
+        try {
+            long handle = mc.getWindow().handle();
+            if (handle != 0L) {
+                User32.INSTANCE.SetForegroundWindow(new WinDef.HWND(Pointer.createConstant(handle)));
+                Thread.sleep(30L);
+            }
+            boolean shift = (mods & GLFW.GLFW_MOD_SHIFT) != 0;
+            boolean control = (mods & GLFW.GLFW_MOD_CONTROL) != 0;
+            boolean alt = (mods & GLFW.GLFW_MOD_ALT) != 0;
+            boolean meta = (mods & GLFW.GLFW_MOD_SUPER) != 0;
+            boolean shiftDown = false;
+            boolean controlDown = false;
+            boolean altDown = false;
+            boolean metaDown = false;
+            try {
+                if (shift) { sendVk(0x10, false); shiftDown = true; }
+                if (control) { sendVk(0x11, false); controlDown = true; }
+                if (alt) { sendVk(0x12, false); altDown = true; }
+                if (meta) { sendVk(0x5B, false); metaDown = true; }
+                Thread.sleep(35L);
+                sendVk(vk, false);
+                Thread.sleep(35L);
+                sendVk(vk, true);
+                return true;
+            } finally {
+                if (metaDown) sendVk(0x5B, true);
+                if (altDown) sendVk(0x12, true);
+                if (controlDown) sendVk(0x11, true);
+                if (shiftDown) sendVk(0x10, true);
+            }
+        } catch (Throwable t) {
+            keyError = "Windows SendInput 不可用：" + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
+            return false;
+        }
+    }
+
+    private static void sendVk(int vk, boolean up) {
+        WinUser.INPUT input = new WinUser.INPUT();
+        input.type = new WinDef.DWORD(WinUser.INPUT.INPUT_KEYBOARD);
+        input.input = new WinUser.INPUT.INPUT_UNION();
+        input.input.ki = new WinUser.KEYBDINPUT();
+        input.input.ki.wVk = new WinDef.WORD(vk);
+        input.input.ki.wScan = new WinDef.WORD(0);
+        input.input.ki.dwFlags = new WinDef.DWORD(up ? WinUser.KEYBDINPUT.KEYEVENTF_KEYUP : 0);
+        input.input.ki.time = new WinDef.DWORD(0);
+        input.input.ki.dwExtraInfo = new BaseTSD.ULONG_PTR(0);
+        input.write();
+        int sent = User32.INSTANCE.SendInput(new WinDef.DWORD(1), new WinUser.INPUT[]{input}, input.size()).intValue();
+        if (sent != 1) {
+            throw new IllegalStateException("SendInput 返回 " + sent);
         }
     }
 

@@ -1,6 +1,6 @@
 # Minecraft 26.2 工具使用教程
 
-这份教程对应目前这套工具：**自动挖矿 autominer 1.15.3 + 多开器 multi + 信息工具 infotools 1.6.2 + 种子探测器 seedfinder 1.1.0 + 指令生成器**。
+这份教程对应目前这套工具：**自动挖矿 autominer 1.15.4 + 多开器 multi + 信息工具 infotools 1.6.2 + 种子探测器 seedfinder 1.1.0 + 指令生成器**。
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 工具 | 作用 | 装在哪里 |
 | --- | --- | --- |
-| autominer | 自动挖矿、自动回箱、宏、事件脚本 | `.minecraft/mods/autominer-1.15.3.jar` |
+| autominer | 自动挖矿、自动回箱、宏、事件脚本 | `.minecraft/mods/autominer-1.15.4.jar` |
 | multi | 一键多开、控制台、自动更新 | 桌面 `multi` 文件夹，双击 `启动多开.bat` |
 | infotools | 行情、比价、商店地图、资产、收购榜等信息 | `.minecraft/mods/infotools-1.6.2.jar` |
 | seedfinder | 查种子、攒反推种子的证据 | `.minecraft/mods/seedfinder-1.1.0.jar` |
@@ -24,7 +24,7 @@
 
 ### 1. 第一次用
 
-1. 把 `autominer-1.15.3.jar`、Fabric API、Baritone API 放进 `mods`。
+1. 把 `autominer-1.15.4.jar`、Fabric API、Baritone API 放进 `mods`。
 2. 进游戏，按 **M** 打开「自动采矿助手」。
 3. 第 1 页勾选要挖的矿石。
 4. 第 2 页添加存矿箱：准星对着箱子/木桶/潜影盒，按 **C** 或点「添加箱子」。
@@ -209,16 +209,15 @@ quit              退出控制台（机器人继续跑）
 配置在 `信息工具配置.txt`：`收购记录 = 开`、`收购提示 = 关`、`收购关键词 = 收,求购,收购`。
 `收购提示` 默认关，避免聊天刷屏；想每条都弹提示就改成 `开`。
 
-## 四点六、宏按键修复（autominer 1.15.3）
+## 四点六、宏按键修复（autominer 1.15.4）
 
-1.15.1 里有些 Windows/PCL 组合会在窗口已经前台时，`mc.isWindowActive()` 仍返回 false，
-导致回放 `Shift+F` 直接报「按键回放失败：请保持游戏窗口在前台」。
+1.15.4 修的是“窗口在前台但回放仍失败”的根因：Minecraft 启动时把 `java.awt.headless` 强制设成 `true`，AWT `Robot` 在游戏 JVM 里根本创建不出来，所以 `Shift+F` 会报「Java Robot 不可用（系统禁止模拟按键）」。
 
-1.15.2 改成：
+1.15.4 改成：
 
-- 不再拿 `isWindowActive()` 当前置条件，先直接试 `java.awt.Robot` 发系统按键。
-- Robot 不可用/按键不支持/系统拒绝时，错误信息会说明具体原因，不再一律怪“没在前台”。
-- 保留原来的界面按键兜底：有界面时仍会走 `KeyEvent`。
+- 按键回放优先走 Windows `SendInput`（JNA），不依赖 AWT；Minecraft 自带 JNA，不需要额外装。
+- 发送前会尝试把游戏窗口拉到前台，再发修饰键和主键。
+- 只有 `SendInput` 失败时才退回 AWT `Robot`，再失败才走界面 `KeyEvent`。
 - 仍然建议用窗口模式，不要最小化；全屏/远程桌面/某些安全软件可能拦截模拟按键。
 
 ## 五、信息工具 infotools
