@@ -135,7 +135,7 @@ quit              退出控制台（机器人继续跑）
 
 ### 3. 更新
 
-双击 **一键更新.bat**，会从 GitHub Release 找最新版，自动替换 mods 里的 `autominer-*.jar`，旧版本自动挪走。
+双击 **一键更新.bat**，会从 GitHub Release 找最新版，自动替换 mods 里的 `autominer-*.jar` 和 `infotools-*.jar`，旧版本自动挪走。
 
 同 IP 同时在线数量受服务器限制，常见是 2 个；第 3 个号要换出口 IP，或者不要同时开。
 
