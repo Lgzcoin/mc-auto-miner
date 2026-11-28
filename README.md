@@ -51,7 +51,7 @@
 
 详细操作见 `multi/启动方式说明.txt`。
 
-最新多开包：`https://github.com/Lgzcoin/mc-auto-miner/releases/tag/v1.15.7`（`multi-launcher-1.15.7.zip`）。
+最新多开包：`https://github.com/Lgzcoin/mc-auto-miner/releases/tag/v1.15.8`（`multi-launcher-1.15.8.zip`）。
 
 ## 从源码构建
 
