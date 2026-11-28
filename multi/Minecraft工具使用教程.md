@@ -1,6 +1,6 @@
 # Minecraft 26.2 工具使用教程
 
-这份教程对应目前这套工具：**自动挖矿 autominer 1.15.2 + 多开器 multi + 信息工具 infotools 1.6.2 + 种子探测器 seedfinder 1.1.0 + 指令生成器**。
+这份教程对应目前这套工具：**自动挖矿 autominer 1.15.3 + 多开器 multi + 信息工具 infotools 1.6.2 + 种子探测器 seedfinder 1.1.0 + 指令生成器**。
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 工具 | 作用 | 装在哪里 |
 | --- | --- | --- |
-| autominer | 自动挖矿、自动回箱、宏、事件脚本 | `.minecraft/mods/autominer-1.15.2.jar` |
+| autominer | 自动挖矿、自动回箱、宏、事件脚本 | `.minecraft/mods/autominer-1.15.3.jar` |
 | multi | 一键多开、控制台、自动更新 | 桌面 `multi` 文件夹，双击 `启动多开.bat` |
 | infotools | 行情、比价、商店地图、资产、收购榜等信息 | `.minecraft/mods/infotools-1.6.2.jar` |
 | seedfinder | 查种子、攒反推种子的证据 | `.minecraft/mods/seedfinder-1.1.0.jar` |
@@ -24,7 +24,7 @@
 
 ### 1. 第一次用
 
-1. 把 `autominer-1.15.2.jar`、Fabric API、Baritone API 放进 `mods`。
+1. 把 `autominer-1.15.3.jar`、Fabric API、Baritone API 放进 `mods`。
 2. 进游戏，按 **M** 打开「自动采矿助手」。
 3. 第 1 页勾选要挖的矿石。
 4. 第 2 页添加存矿箱：准星对着箱子/木桶/潜影盒，按 **C** 或点「添加箱子」。
@@ -209,7 +209,7 @@ quit              退出控制台（机器人继续跑）
 配置在 `信息工具配置.txt`：`收购记录 = 开`、`收购提示 = 关`、`收购关键词 = 收,求购,收购`。
 `收购提示` 默认关，避免聊天刷屏；想每条都弹提示就改成 `开`。
 
-## 四点六、宏按键修复（autominer 1.15.2）
+## 四点六、宏按键修复（autominer 1.15.3）
 
 1.15.1 里有些 Windows/PCL 组合会在窗口已经前台时，`mc.isWindowActive()` 仍返回 false，
 导致回放 `Shift+F` 直接报「按键回放失败：请保持游戏窗口在前台」。

@@ -52,6 +52,11 @@ public final class MacroManager {
     private static Robot robot = null;
     private static boolean robotTried = false;
 
+    // 直接读 GLFW 键状态，避免界面打开时 KeyMapping 不触发导致 F7 结束不了录制。
+    private static boolean rawF7Down = false;
+    private static boolean rawF8Down = false;
+    private static boolean rawF9Down = false;
+
     private static String pendingName = null;
     private static long pendingAtMs = 0L;
     private static String lastScreenTitle = null;
@@ -163,6 +168,28 @@ public final class MacroManager {
 
     private static boolean sameTitle(String a, String b) {
         return cleanTitle(a).equals(cleanTitle(b));
+    }
+
+    /** 每 tick 直接读原始按键；界面打开时 KeyMapping 可能不派发，F7/F8/F9 仍然可用。 */
+    public static void tickHotkeys(Minecraft mc) {
+        long handle = mc.getWindow().handle();
+        boolean f7 = isKeyDown(handle, GLFW.GLFW_KEY_F7);
+        boolean f8 = isKeyDown(handle, GLFW.GLFW_KEY_F8);
+        boolean f9 = isKeyDown(handle, GLFW.GLFW_KEY_F9);
+
+        if (f7 && !rawF7Down) {
+            toggleRecord();
+        }
+        if (f8 && !rawF8Down) {
+            playCurrent();
+        }
+        if (f9 && !rawF9Down) {
+            toggleAuto();
+        }
+
+        rawF7Down = f7;
+        rawF8Down = f8;
+        rawF9Down = f9;
     }
 
     /** F7：开始/结束录制；没有界面时录「全局」宏，可以先录 Shift+F。 */
