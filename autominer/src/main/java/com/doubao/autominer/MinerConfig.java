@@ -118,6 +118,8 @@ public class MinerConfig {
         public String event = "";
         public boolean enabled = true;
         public List<String> commands = new ArrayList<>();
+        /** macro=只跑宏，command=只发指令，both=宏后接指令；空 = 老配置自动推断。 */
+        public String action = "";
         /** 先执行的宏名（对应 宏/<名字>.txt）；空 = 不执行宏。 */
         public String macro = "";
         /** 放 config 目录的脚本文件名；一行一条，空 = 不读。 */
@@ -317,6 +319,14 @@ public class MinerConfig {
             }
             if (hook.commands == null) hook.commands = new ArrayList<>();
             if (hook.macro == null) hook.macro = "";
+            if (hook.action == null || hook.action.isBlank()) {
+                boolean hasMacro = !hook.macro.isBlank();
+                boolean hasCommands = !hook.commands.isEmpty();
+                hook.action = hasMacro && hasCommands ? "both" : (hasMacro ? "macro" : "command");
+            }
+            if (!"macro".equals(hook.action) && !"command".equals(hook.action) && !"both".equals(hook.action)) {
+                hook.action = "command";
+            }
             if (hook.script == null) hook.script = "";
             if (hook.commandDelayTicks < 0) hook.commandDelayTicks = 0;
             if (hook.commandDelayTicks > 200) hook.commandDelayTicks = 200;

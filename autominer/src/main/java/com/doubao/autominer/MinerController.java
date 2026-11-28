@@ -552,11 +552,21 @@ public final class MinerController {
         }
         List<String> queue = buildScriptQueue(hook);
         String macro = hook.macro == null ? "" : hook.macro.trim();
-        if (queue.isEmpty() && macro.isEmpty()) {
+        String action = hook.action == null ? "" : hook.action.trim();
+        boolean useMacro = !macro.isEmpty() && !"command".equals(action);
+        boolean useCommands = !queue.isEmpty() && !"macro".equals(action);
+        // 勾选的类型为空时，自动用另一种，避免事件看起来“配了但不执行”。
+        if (!useMacro && !useCommands) {
+            useMacro = !macro.isEmpty();
+            useCommands = !queue.isEmpty();
+        }
+        if (!useMacro && !useCommands) {
             return false;
         }
         clearScript();
-        scriptQueue.addAll(queue);
+        if (useCommands) {
+            scriptQueue.addAll(queue);
+        }
         scriptAfter = after;
         scriptLabel = event.label;
         scriptIndex = 0;
@@ -564,19 +574,19 @@ public final class MinerController {
         scriptDoneTicks = 0;
         scriptSettleTicks = hook.settleTicks;
         scriptCommandDelayTicks = hook.commandDelayTicks;
-        scriptMacro = macro;
-        scriptMacroPending = !macro.isEmpty();
+        scriptMacro = useMacro ? macro : "";
+        scriptMacroPending = useMacro;
         scriptMacroRunning = false;
-        scriptBudget = 200 + queue.size() * (hook.commandDelayTicks + 5) + hook.settleTicks;
+        scriptBudget = 200 + scriptQueue.size() * (hook.commandDelayTicks + 5) + hook.settleTicks;
         state = State.SCRIPT;
         stateTicks = 0;
         BaritoneHook.cancelAll();
-        if (!macro.isEmpty() && queue.isEmpty()) {
-            message("执行[" + event.label + "]：先跑宏「" + macro + "」。");
-        } else if (!macro.isEmpty()) {
-            message("执行[" + event.label + "]：先跑宏「" + macro + "」，再发 " + queue.size() + " 条指令。");
+        if (useMacro && !useCommands) {
+            message("执行[" + event.label + "]：跑宏「" + macro + "」。");
+        } else if (useMacro) {
+            message("执行[" + event.label + "]：先跑宏「" + macro + "」，再发 " + scriptQueue.size() + " 条指令。");
         } else {
-            message("执行[" + event.label + "]：先发 " + queue.size() + " 条指令。");
+            message("执行[" + event.label + "]：先发 " + scriptQueue.size() + " 条指令。");
         }
         return true;
     }
@@ -630,7 +640,8 @@ public final class MinerController {
                 message("[" + scriptLabel + "] 开始执行宏「" + scriptMacro + "」。");
                 return;
             }
-            message("[" + scriptLabel + "] 宏「" + scriptMacro + "」启动失败，继续发指令。");
+            message("[" + scriptLabel + "] 宏「" + scriptMacro + "」启动失败"
+                    + (scriptQueue.isEmpty() ? "，事件结束。" : "，继续发指令。"));
         }
         if (scriptMacroRunning) {
             if (MacroManager.isPlaying()) {

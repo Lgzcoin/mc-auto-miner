@@ -288,12 +288,14 @@ public class MinerScreen extends Screen {
         for (HookEvent event : HookEvent.values()) {
             MinerConfig.Hook hook = config.hookOrCreate(event);
             String mark = hook.enabled ? "§a开" : "§7关";
+            String what = "macro".equals(hook.action) ? "§b宏"
+                    : "both".equals(hook.action) ? "§d宏+指令" : "§f指令";
             String count = hook.commands == null || hook.commands.isEmpty()
-                    ? "无指令" : (hook.commands.size() + " 条");
-            String macro = hook.macro == null || hook.macro.isBlank() ? "" : " §b宏:" + hook.macro;
+                    ? "" : (" §8" + hook.commands.size() + "条");
+            String macro = hook.macro == null || hook.macro.isBlank() ? "" : " §b" + hook.macro;
             String script = hook.script == null || hook.script.isBlank() ? "" : " §8+脚本";
             this.addRenderableWidget(new StringWidget(cx - 205, rowY + 5, 180, 12,
-                    Component.literal("§f" + event.label + " §7" + mark + " §8" + count + macro + script), this.font));
+                    Component.literal("§f" + event.label + " §7" + mark + " " + what + count + macro + script), this.font));
 
             this.addRenderableWidget(Button.builder(
                     Component.literal(hook.enabled ? "§a开" : "§7关"),

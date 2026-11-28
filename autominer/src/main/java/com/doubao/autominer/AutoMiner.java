@@ -9,7 +9,7 @@ import java.nio.file.Files;
 
 public class AutoMiner implements ClientModInitializer {
     public static final String MOD_ID = "autominer";
-    public static final String MOD_VERSION = "1.15.5";
+    public static final String MOD_VERSION = "1.15.6";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static MinerConfig config;

@@ -42,7 +42,7 @@
 
 ## 安装
 
-1. 把 `dist/autominer-1.15.5.jar` 放进 `.minecraft/mods/`
+1. 把 `dist/autominer-1.15.6.jar` 放进 `.minecraft/mods/`
 2. 放入对应 26.2 的 Fabric API 和 `baritone-api-fabric` jar
 3. 把 `multi/` 整个文件夹放到桌面，双击 `启动多开.bat`
 
@@ -99,7 +99,7 @@ cd autominer
 
 限制：只录「按下瞬间」，不录长按、拖拽、滚轮和连续打字；宏按界面标题匹配，标题相同但布局完全不同的界面可能点偏；录制时点击会真实生效，相当于你亲手演示一遍。
 
-## 事件钩子（1.15.5）
+## 事件钩子（1.15.6）
 
 每个关键节点都能挂自己的宏、游戏指令或指令脚本，并且能单独开关。按 **M** → 第 4 页「事件脚本」：
 
@@ -115,9 +115,12 @@ cd autominer
 | 挖完/找不到矿 | 附近没有可挖矿石、准备暂停时 |
 | 停止挖矿 | 手动或自动停止时 |
 
-点某一行的「编辑」可以配：
+点某一行的「编辑」会打开图形化动作面板：
 
-- **宏**：填 `宏` 目录里的宏名（例如 `回箱`），留空 = 不用宏；有宏时先跑宏，再按间隔发指令。钩子宏建议录成「全局」宏，避免依赖某个界面。
+- **勾选「宏」**：左侧用 `◀ ▶` 选 `宏` 目录里的宏，只跑宏；
+- **勾选「指令」**：只发下面的游戏指令/脚本；
+- **勾选「宏+指令」**：先跑宏，再发指令；
+- 没勾选的类型不会执行，输入框也会变灰。
 - **游戏指令**：多条用 `|` 分隔，按顺序发；不用写开头 `/`。例：`/home|/kit miner|/msg 队友 回箱`
 - **脚本文件**：放在 `config` 目录的文本文件，一行一条，也可用 `|` 分隔，`#` 开头是注释；留空 = 不读
 - **指令间隔**：每条之间等多少 tick，20 tick = 1 秒
@@ -135,6 +138,7 @@ cd autominer
 /am hook pre_deposit add /home    追加一条
 /am hook pre_deposit del 2        删除第 2 条
 /am hook pre_deposit macro 回箱   先执行这个宏（off = 取消）
+/am hook pre_deposit action macro|command|both   切换动作类型
 /am hook pre_deposit clear        清空宏和指令
 /am hook pre_deposit script xxx.txt
 /am hook pre_deposit delay 10
